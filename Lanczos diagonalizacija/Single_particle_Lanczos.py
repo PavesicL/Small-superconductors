@@ -214,7 +214,7 @@ class HLinOP(LinearOperator):
 		self.lengthOfBasis = lengthOfBasis
 
 	def _matvec(self, state):
-		return HonState(d, alpha, state, N, basisList, lengthOfBasis)
+		return HonState(self.d, self.alpha, state, self.N, self.basisList, self.lengthOfBasis)
 
 # DIAGONALISATION ##############################################################
 
@@ -285,6 +285,7 @@ parity_gap_plot=0
 spectroscopic_gap_plot=0
 
 ################################################################################
+
 if profiling:
 	import cProfile
 
