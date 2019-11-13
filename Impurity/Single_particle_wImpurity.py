@@ -36,6 +36,16 @@ from scipy.sparse.linalg import LinearOperator
 from scipy.sparse.linalg import eigsh
 
 from numba import jit
+# UTILITY ######################################################################
+
+def printV(vector, basisList, prec=0.1):
+	"""
+	Prints the most prominent elements of a vector and their amplitudes.
+	"""
+	for i in range(len(vector)):
+		if abs(vector[i])>prec:
+			print(basisList[i], bin(basisList[i]), vector[i])
+
 # BASIS ########################################################################
 
 def lengthOfBasisFunc(Nlevels, nParticles):
@@ -328,7 +338,8 @@ def spinInteractionOnState(i, j, state, N, basisList, lengthOfBasis):
 		coef = state[k]
 
 		if coef!=0:	
-				
+			
+			
 			#S+ s-		
 			prefactor1, m1 = spinSpsm(i, j, basisList[k], N)
 			if m1!=0:
@@ -340,16 +351,16 @@ def spinInteractionOnState(i, j, state, N, basisList, lengthOfBasis):
 			if m2!=0:
 				#Check crcrananOnState() for comments
 				new_state[np.searchsorted(basisList, m2)] += 0.5 * coef * prefactor2
-			
+
 			#Sz sz			
 			impSCoef = -2*impSz(basisList[k], N) + 1	#gives 1 for Sz=0 (UP) and -1 for Sz=1 (DOWN)
 			m3, prefactor3 = SzszUp(i, j, basisList[k], N)
 			if m3 != 0:
-				new_state[np.searchsorted(basisList, m3)] += 0.5 * impSCoef * coef * prefactor3
+				new_state[np.searchsorted(basisList, m3)] += 0.5 * impSCoef * coef * prefactor3 *0.5
 			
 			m4, prefactor4 = SzszDown(i, j, basisList[k], N)
 			if m4 != 0:	
-				new_state[np.searchsorted(basisList, m4)] += -0.5 * impSCoef * coef * prefactor4
+				new_state[np.searchsorted(basisList, m4)] += -0.5 * impSCoef * coef * prefactor4 *0.5
 
 	return new_state		
 
@@ -368,7 +379,7 @@ def HonState(d, alpha, J, state, N, basisList, lengthOfBasis):
 	lengthOfBasis - the length of the state vector (int)
 	"""
 
-	kinetic, interaction, impurity = 0, 0, 0
+	kinetic, interaction, impurity = np.zeros(lengthOfBasis), np.zeros(lengthOfBasis), np.zeros(lengthOfBasis)
 
 	for i in range(N):
 		niUP = CountingOpOnState(i, 0, state, N, basisList, lengthOfBasis)
@@ -381,6 +392,7 @@ def HonState(d, alpha, J, state, N, basisList, lengthOfBasis):
 			interaction += crcrananOnState(i, j, state, N, basisList, lengthOfBasis)
 
 			impurity += spinInteractionOnState(i, j, state, N, basisList, lengthOfBasis)
+
 
 	return kinetic - d*alpha*interaction + (J/N)*impurity
 
@@ -517,19 +529,49 @@ if 0:
 	print(val[:NofValues])
 
 if 1:
-	NN, nn = 3, 3
-	dd, aalpha, JJ = 1, 1, 1
+	NN = 3
+	nn = NN
+	dd, aalpha, JJ = 0, 0, NN
 	NofValues = 5
 
-	for k in range(2):
-		
-		a1, b1, c1 = LanczosDiag_states(NN, nn, dd, aalpha, JJ, NofValues=NofValues)
+	print("ENERGIJE")
+	print([eps(i, dd, NN) for i in range(NN)])
+	print()
 
-		a2, b2, c2 = LanczosDiag_states(NN, nn, dd, aalpha, JJ, NofValues=NofValues)
-		
-		print(a1-a2)
- 
+	for k in range(1):
+		lengthOfBasis, basisList = makeBase(NN, nn)
 
+		#a1, b1, c1 = LanczosDiag_states(NN, nn, dd, aalpha, JJ, NofValues=NofValues)
+
+		#a2, b2, c2 = LanczosDiag_states(NN, nn, dd, aalpha, JJ, NofValues=NofValues)
+
+
+		#print(basisList)
+		#for i in basisList:
+		#	print(bin(i))
+		val, vec = exactDiag(dd, aalpha, JJ, NN, basisList, lengthOfBasis)
+
+		#print(a1-a2)
+		print("ENERGIJA")
+		print(val[:5])
+
+		print("VEKTOR GS")
+		printV(vec[:, 0], basisList, prec=0.1)
+		
+		print("VEKTOR ES 1")
+		printV(vec[:, 1], basisList, prec=0.1)
+		
+		print("VEKTOR ES 2")
+		printV(vec[:, 2], basisList, prec=0.1)
+
+		"""
+		for i in range(len(vec[:, 0])):
+			v0 = vec[:, i]
+			print(v0[5])	
+			print(v0[-6])	
+			print(v0[-15])	
+			print()	
+		"""	
 
 if 0:	
 	N=2
