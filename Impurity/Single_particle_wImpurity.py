@@ -352,7 +352,6 @@ def spinInteractionOnState(i, j, state, N, basisList, lengthOfBasis):
 			if m2!=0:
 				#Check crcrananOnState() for comments
 				new_state[np.searchsorted(basisList, m2)] += 0.5 * coef * prefactor2
-				
 
 			#Sz sz			
 			impSCoef = -2*impSz(basisList[k], N) + 1	#gives 1 for Sz=0 (UP) and -1 for Sz=1 (DOWN)
@@ -533,12 +532,11 @@ if 0:
 
 		a2, b2, c2 = LanczosDiag_states(NN, nn, dd, aalpha, JJ, NofValues=NofValues)
 
-
 		#print(basisList)
 		#for i in basisList:
 		#	print(bin(i))
 		val, vec = exactDiag(dd, aalpha, JJ, NN, basisList, lengthOfBasis)
-
+    
 		print(a1 - val[:NofValues])
 		print(a2 - val[:NofValues])
 		print(val)
