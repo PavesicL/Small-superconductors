@@ -79,18 +79,18 @@ def makeBase(Nlevels, nParticles):
 # BIT-WISE #####################################################################
 
 @jit
-def flipBit(n, offset):
-	"""Flips the bit at position offset in the integer n."""
+def flipBit(m, offset):
+	"""Flips the bit at position offset in the integer m."""
 	mask = 1 << offset
-	return(n ^ mask)
+	return(m ^ mask)
 
 @jit
-def countSetBits(n): 
+def countSetBits(m): 
 	"""Counts the number of bits that are set to 1 in a given integer."""
 	count = 0
-	while (n): 
-		count += n & 1
-		n >>= 1
+	while (m): 
+		count += m & 1
+		m >>= 1
 	return count 
 
 @jit
@@ -117,7 +117,7 @@ def prefactor_offset(m, off, N):
 
 	#count the remaining 1s
 	count = countSetBits(m)
-	
+
 	return (-1)**count
 
 # ELECTRON OPERATORS ###########################################################
@@ -316,7 +316,7 @@ def SzszDown(i, j, m, N):
 			m2 = m22
 			return m2, prefactor
 	return 0, 0
-	
+
 @jit
 def spinInteractionOnState(i, j, state, N, basisList, lengthOfBasis):
 	"""
@@ -328,30 +328,30 @@ def spinInteractionOnState(i, j, state, N, basisList, lengthOfBasis):
 		coef = state[k]
 
 		if coef!=0:	
-				
+
 			#S+ s-		
 			prefactor1, m1 = spinSpsm(i, j, basisList[k], N)
 			if m1!=0:
 				#Check crcrananOnState() for comments
-				new_state[np.searchsorted(basisList, m1)] += 0.5 * coef * prefactor1 
+				new_state[np.searchsorted(basisList, m1)] += 0.5 * coef #* prefactor1
 
 			#S- s+	
-			prefactor2, m2 = spinSmsp(i, j, basisList[k], N)	
+			prefactor2, m2 = spinSmsp(i, j, basisList[k], N)
 			if m2!=0:
 				#Check crcrananOnState() for comments
-				new_state[np.searchsorted(basisList, m2)] += 0.5 * coef * prefactor2
-			
+				new_state[np.searchsorted(basisList, m2)] += 0.5 * coef #* prefactor2
+
 			#Sz sz			
 			impSCoef = -2*impSz(basisList[k], N) + 1	#gives 1 for Sz=0 (UP) and -1 for Sz=1 (DOWN)
 			m3, prefactor3 = SzszUp(i, j, basisList[k], N)
 			if m3 != 0:
-				new_state[np.searchsorted(basisList, m3)] += 0.5 * impSCoef * coef * prefactor3
+				new_state[np.searchsorted(basisList, m3)] += 0.5 * impSCoef * coef #* prefactor3
 			
 			m4, prefactor4 = SzszDown(i, j, basisList[k], N)
 			if m4 != 0:	
-				new_state[np.searchsorted(basisList, m4)] += -0.5 * impSCoef * coef * prefactor4
-
-	return new_state		
+				new_state[np.searchsorted(basisList, m4)] += -0.5 * impSCoef * coef #* prefactor4
+			
+	return new_state
 
 # HAMILTONIAN ##################################################################
 
@@ -383,7 +383,7 @@ def HonState(d, alpha, J, state, N, basisList, lengthOfBasis):
 			impurity += spinInteractionOnState(i, j, state, N, basisList, lengthOfBasis)
 
 	return kinetic - d*alpha*interaction + (J/N)*impurity
-
+	
 class HLinOP(LinearOperator):
 	"""
 	This is a class, built-in in scipy, which allows for a representation of a given function as a linear operator. The method _matvec() defines how it acts on a vector.
@@ -474,24 +474,25 @@ def eps(i, d, N):
 
 ################################################################################
 
-def LanczosDiag(N, n, d, alpha, J, NofValues=4):
+def LanczosDiag(N, n, d, alpha, J, NofValues=4, initVec=None):
 	"""
 	For a given number of levels N, and given number of particles n, return the eigenenergies of the Hamiltonian.
 	"""
 
 	lengthOfBasis, basisList = makeBase(N, n)
 	LinOp = HLinOP(d, alpha, J, N, basisList, lengthOfBasis) 
-	values = eigsh(LinOp, k=NofValues, which="SA", ncv = 10*NofValues, return_eigenvectors=False)[::-1]
+	values = eigsh(LinOp, k=NofValues, which="SA", ncv = 10*NofValues, return_eigenvectors=False, v0=initVec)[::-1]
 
 	return values
 
-def LanczosDiag_states(N, n, d, alpha, J, NofValues=4):
+def LanczosDiag_states(N, n, d, alpha, J, NofValues=4, initVec=None):
 	"""
 	For a given number of levels N, and given number of particles n, return the eigenenergies and eigenstates of the Hamiltonian.
 	"""
+
 	lengthOfBasis, basisList = makeBase(N, n)
 	LinOp = HLinOP(d, alpha, J, N, basisList, lengthOfBasis) 
-	values, vectors = eigsh(LinOp, k=NofValues, which="SA")
+	values, vectors = eigsh(LinOp, k=NofValues, which="SA", v0=initVec)
 
 	return values, vectors, basisList
 
@@ -517,18 +518,69 @@ if 0:
 	print(val[:NofValues])
 
 if 1:
-	NN, nn = 3, 3
-	dd, aalpha, JJ = 1, 1, 1
+	NN, nn = 7, 7
+	dd, aalpha, JJ = 1, 1e-45, 0.3
 	NofValues = 5
 
-	for k in range(2):
-		
-		a1, b1, c1 = LanczosDiag_states(NN, nn, dd, aalpha, JJ, NofValues=NofValues)
+	print("ENERGIJA")
+	print([eps(i, dd, NN) for i in range(NN)])
 
-		a2, b2, c2 = LanczosDiag_states(NN, nn, dd, aalpha, JJ, NofValues=NofValues)
+	for k in range(2):
+
+		lengthOfBasis, basisList = makeBase(NN, nn)
+
+		initVec=np.zeros(lengthOfBasis)
+		initVec[np.searchsorted(basisList, 120)] += 1
+		initVec[np.searchsorted(basisList, 52)] += 1
+		initVec = initVec/norm(initVec)
+
+		a1, b1, c1 = LanczosDiag_states(NN, nn, dd, aalpha, JJ, NofValues=NofValues, initVec=None)
 		
+		print("GS")
+		v = b1[:, 0]
+		for l in range(len(v)):
+			if abs(v[l])>0.1:
+				print(l, v[l], bin(basisList[l]))
+		print()
+		print("EXCITED")
+		v = b1[:, 1]
+		for l in range(len(v)):
+			if abs(v[l])>0.1:
+				print(l, v[l], bin(basisList[l]))
+		print()
+		print("EXCITED 2")
+		v = b1[:, 2]
+		for l in range(len(v)):
+			if abs(v[l])>0.1:
+				print(l, v[l], bin(basisList[l]))
+		print()
+
+
+		a2, b2, c2 = LanczosDiag_states(NN, nn, dd, aalpha, JJ, NofValues=NofValues, initVec=None)
+		
+		v = b2[:, 0]
+		for l in range(len(v)):
+			if abs(v[l])>0.1:
+				print(l, v[l], bin(basisList[l]))
+		print()
+				
+		
+		#a1 = LanczosDiag(NN, nn, dd, aalpha, JJ, NofValues=NofValues, initVec=initVec)
+		#a2 = LanczosDiag(NN, nn, dd, aalpha, JJ, NofValues=NofValues, initVec=initVec)
+
+		print(a1)
+		print(a2)
 		print(a1-a2)
- 
+
+		#val, vec = exactDiag(dd, aalpha, JJ, NN, basisList, lengthOfBasis)
+
+		#print(a1)
+		#print(a1-val[:NofValues])
+		#print(a2-val[:NofValues])
+		
+		print()
+
+
 
 
 if 0:	
