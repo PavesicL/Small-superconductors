@@ -414,10 +414,24 @@ class HLinOP(LinearOperator):
 	def _matvec(self, state):
 		return HonState(self.d, self.alpha, self.J, state, self.N, self.basisList, self.lengthOfBasis)
 
+# PHYSICS ######################################################################
+
+@jit
+def eps(i, d, N):
+	"""
+	Dispersion; the spacing between levels is d. This is used to compute the energy for the singly occupied levels.
+	"""
+
+	return d*(i - ((N-1)/2))
+
 # DIAGONALISATION ##############################################################
 
-def exactDiag(d, alpha, J, N, basisList, lengthOfBasis):
-	"""Diagonalises the hamiltonian using exact diagonalisation."""
+def exactDiag(N, n, d, alpha, J):
+	"""
+	Diagonalises the hamiltonian using exact diagonalisation.
+	"""
+
+	lengthOfBasis, basisList = makeBase(N, n)
 
 	matrika1=[]
 	for i in range(lengthOfBasis):
@@ -438,6 +452,27 @@ def exactDiag(d, alpha, J, N, basisList, lengthOfBasis):
 	val1, vec1 = np.linalg.eigh(matrika1)
  
 	return val1, vec1
+
+def LanczosDiag(N, n, d, alpha, J, NofValues=4):
+	"""
+	For a given number of levels N, and given number of particles n, return the eigenenergies of the Hamiltonian.
+	"""
+
+	lengthOfBasis, basisList = makeBase(N, n)
+	LinOp = HLinOP(d, alpha, J, N, basisList, lengthOfBasis) 
+	values = eigsh(LinOp, k=NofValues, which="SA", ncv = 10*NofValues, return_eigenvectors=False)[::-1]
+
+	return values
+
+def LanczosDiag_states(N, n, d, alpha, J, NofValues=4):
+	"""
+	For a given number of levels N, and given number of particles n, return the eigenenergies and eigenstates of the Hamiltonian.
+	"""
+	lengthOfBasis, basisList = makeBase(N, n)
+	LinOp = HLinOP(d, alpha, J, N, basisList, lengthOfBasis) 
+	values, vectors = eigsh(LinOp, k=NofValues, which="SA")
+
+	return values, vectors, basisList
 
 # DATA ANALYSIS ################################################################
 
@@ -475,50 +510,33 @@ def findSecondExcited(values, precision=1e-16):
 
 	print("NOTHING FOUND; PROBLEM IN SPECTRUM?")
 
-# PHYSICS ######################################################################
-
-@jit
-def eps(i, d, N):
+def transitionE(N, d, alpha, J, initn, finaln):
 	"""
-	Dispersion; the spacing between levels is d. This is used to compute the energy for the singly occupied levels.
+	Calculates the difference between ground state energies of a system with initn and finaln particles. If normalized=True, 
+	it returns the energy, normalized with the value without the impurity. 
 	"""
+	
+	initValue = LanczosDiag(N, initn, d, alpha, J, NofValues=2)[0]#/initn
+	finalValue = LanczosDiag(N, finaln, d, alpha, J, NofValues=2)[0]#/finaln
 
-	return d*(i - ((N-1)/2))
-
-################################################################################
-
-def LanczosDiag(N, n, d, alpha, J, NofValues=4):
-	"""
-	For a given number of levels N, and given number of particles n, return the eigenenergies of the Hamiltonian.
-	"""
-
-	lengthOfBasis, basisList = makeBase(N, n)
-	LinOp = HLinOP(d, alpha, J, N, basisList, lengthOfBasis) 
-	values = eigsh(LinOp, k=NofValues, which="SA", ncv = 10*NofValues, return_eigenvectors=False)[::-1]
-
-	return values
-
-def LanczosDiag_states(N, n, d, alpha, J, NofValues=4):
-	"""
-	For a given number of levels N, and given number of particles n, return the eigenenergies and eigenstates of the Hamiltonian.
-	"""
-	lengthOfBasis, basisList = makeBase(N, n)
-	LinOp = HLinOP(d, alpha, J, N, basisList, lengthOfBasis) 
-	values, vectors = eigsh(LinOp, k=NofValues, which="SA")
-
-	return values, vectors, basisList
+	if initn>finaln:	#n->n-1 process
+		return initValue - finalValue
+	elif initn<finaln:	#n->n+1 process
+		return finalValue - initValue
+			
 
 # CALCULATION ##################################################################
 states_print = 0
 spectrum_J_plot = 0
-spectrum_alpha_plot = 1
-
+spectrum_alpha_plot = 0
+spectral_transition_ofJ_plot = 1
+spectral_transition_of_alpha_plot = 0
 ################################################################################
 
 if 0:
-	NN = 4
+	NN = 5
 	nn = NN
-	dd, aalpha, JJ = 1, 1, NN
+	dd, aalpha, JJ = 1, 0, 0
 	NofValues = 6
 
 	print("ENERGIJE")
@@ -530,16 +548,18 @@ if 0:
 
 		a1, b1, c1 = LanczosDiag_states(NN, nn, dd, aalpha, JJ, NofValues=NofValues)
 
-		a2, b2, c2 = LanczosDiag_states(NN, nn, dd, aalpha, JJ, NofValues=NofValues)
+		a2, b2, c2 = LanczosDiag_states(NN, nn+1, dd, aalpha, JJ, NofValues=NofValues)
 
 		#print(basisList)
 		#for i in basisList:
 		#	print(bin(i))
-		val, vec = exactDiag(dd, aalpha, JJ, NN, basisList, lengthOfBasis)
-    
+		val, vec = exactDiag(NN, nn, dd, aalpha, JJ)
+		
+		print(a1[0], a2[0])
+		print(a1-a2)
 		print(a1 - val[:NofValues])
 		print(a2 - val[:NofValues])
-		print(val)
+		print(val[:NofValues])
 		"""
 		#print(a1-a2)
 		print("ENERGIJA")
@@ -555,14 +575,12 @@ if 0:
 		printV(vec[:, 2], basisList, prec=0.1)
 		"""
 
-
 if states_print:
 
 	N=4
 	n=N
-	d, alpha = 1, 1
-	J = 1.7777777777777777
-	
+	d, alpha = 1, 0
+	J = 0
 	NNN = 20
 
 	val, vec, basisList = LanczosDiag_states(N, n, d, alpha, J, NofValues=NNN)
@@ -642,7 +660,7 @@ if spectrum_J_plot:
 				#plt.close()
 
 if spectrum_alpha_plot:
-	save=1
+	save=0
 
 	NofStates = 20
 
@@ -701,10 +719,47 @@ if spectrum_alpha_plot:
 			else:
 				plt.show()
 
+if spectral_transition_ofJ_plot:
+	
+	N=7
+	n=9
+	d, alpha = 1, 1
+
+	initn1, finaln1 = n, n+1
+	initn2, finaln2 = n, n-1
+
+	DeltaJ1 = transitionE(N, d, alpha, 0, initn1, finaln1)
+	DeltaJ2 = transitionE(N, d, alpha, 0, initn2, finaln2)
 
 
+	EpList, EmList = [], []	
 
+	Jmin, Jmax = 0, 3
+	Jlist = np.linspace(Jmin, Jmax, 10)
+	for J in Jlist:
+		print(N, J)
+		
+		EpList.append(transitionE(N, d, alpha, J, initn1, finaln1))
+		EmList.append(transitionE(N, d, alpha, J, initn2, finaln2))
 
+	print(EpList)
+	print(EmList)
+
+	plt.plot(Jlist, EpList/DeltaJ1, label=r"$n={0}\rightarrow {1}$".format(initn1, finaln1))
+
+	plt.plot(Jlist, EmList/DeltaJ2, label=r"$n={0}\rightarrow {1}$".format(initn2, finaln2))	
+		
+
+	plt.xlabel(r"$J$")
+	plt.ylabel(r"$\Delta E / \Delta E(J=0)$")
+
+	plt.title(r"$N={0}$".format(N))
+
+	plt.legend()
+	plt.grid()
+	plt.tight_layout()
+
+	plt.show()
 
 
 
