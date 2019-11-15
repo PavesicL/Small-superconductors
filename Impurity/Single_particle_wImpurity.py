@@ -529,8 +529,8 @@ def transitionE(N, d, alpha, J, initn, finaln):
 states_print = 0
 spectrum_J_plot = 0
 spectrum_alpha_plot = 0
-spectral_transition_ofJ_plot = 1
-spectral_transition_of_alpha_plot = 0
+spectral_transition_ofJ_plot = 0
+spectral_transition_of_alpha_plot = 1
 ################################################################################
 
 if 0:
@@ -761,8 +761,56 @@ if spectral_transition_ofJ_plot:
 
 	plt.show()
 
+if spectral_transition_of_alpha_plot:
 
+	N=7
+	n=7
+	d, J = 1, 0.6
 
+	initn1, finaln1 = n, n+1
+	initn2, finaln2 = n, n-1
 
+	EpList, EmList = [], []	
+
+	dDeltaMin, dDeltaMax = 0.1, 10
+	dDeltaList = np.linspace(dDeltaMin, dDeltaMax, 10)
+	for dDelta in dDeltaList:
+
+		omegaD = 0.5*N*d	
+		alpha = 1/(np.arcsinh(dDelta*0.5*omegaD/d))
+		Delta = omegaD/(2*np.sinh(1/alpha))	
+		
+		print(N, dDelta)
+		
+		Ep = transitionE(N, d, alpha, J, initn1, finaln1)
+		Em = transitionE(N, d, alpha, J, initn2, finaln2)
+
+		DeltaJ1 = transitionE(N, d, alpha, 0, initn1, finaln1)
+		DeltaJ2 = transitionE(N, d, alpha, 0, initn2, finaln2)
+	
+		EpList.append(Ep/DeltaJ1)
+		EmList.append(Em/DeltaJ2)
+	
+
+	print(EpList)
+	print(EmList)
+
+	plt.plot(dDeltaList, EpList, label=r"$n={0}\rightarrow {1}$".format(initn1, finaln1))
+
+	plt.plot(dDeltaList, EmList, label=r"$n={0}\rightarrow {1}$".format(initn2, finaln2))	
+	
+	#plt.xscale("log")
+	#plt.yscale("log")	
+
+	plt.xlabel(r"$d/\Delta$")
+	plt.ylabel(r"$\Delta E / \Delta E(J=0)$")
+
+	plt.title(r"$N={0}$".format(N))
+
+	plt.legend()
+	plt.grid()
+	plt.tight_layout()
+
+	plt.show()
 
 
