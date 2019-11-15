@@ -80,7 +80,7 @@ def defineBase(Nlevels, nParticles, lengthOfBasis):
 
 def makeBase(Nlevels, nParticles):
 	"""	
-	Calls the two previous functions, and creates a basis - returns its length and a list of states.
+	Calls the two previous functions and creates a basis - returns its length and a list of states.
 	"""	
 	lengthOfBasis = lengthOfBasisFunc(Nlevels, nParticles)
 	basisList = defineBase(Nlevels, nParticles, lengthOfBasis)
@@ -265,41 +265,10 @@ def spinSmsp(i, j, m, N):
 	return 0, 0
 
 @jit
-def spinSzsz(i, j, m, N):
-	"""
-	Calculates the application of the term Sz ( c_iUP^dag c_jUP - c_iDOWN^dag c_JDOWN ) to a basis state m.
-	"""
-	prefactor1, prefactor2 = 1, 1
-	#term with spin UP
-	m11 = flipBit(m, 2*(N-j)-1)
-	if m11 < m:
-		m12 = flipBit(m11, 2*(N-i)-1)
-		if m12 > m11:
-			prefactor1 *= prefactor_offset(m, 2*(N-j)-1, N)
-			prefactor1 *= prefactor_offset(m, 2*(N-i)-1, N)
-			m1 = m12
-			done1=True
-	if not done1:
-		m1 = 0
-		prefactor1 = 0
-
-	#term with spin DOWN	
-	m21 = flipBit(m, 2*(N-j)-1-1)
-	if m21 < m:
-		m22 = flipBit(m21, 2*(N-i)-1-1)
-		if m22 > m21:
-			prefactor2 *= prefactor_offset(m, 2*(N-j)-1-1, N)
-			prefactor2 *= prefactor_offset(m, 2*(N-i)-1-1, N)
-			m2 = m22
-			done2=True
-	if not done2:
-		m2 = 0
-		prefactor2 = 0
-
-	return prefactor1, m1, prefactor2, m2	
-
-@jit
 def SzszUp(i, j, m, N):
+	"""
+	Calculates the result of action of the operator Sz c_iUP c_jUP to a basis state m.
+	"""
 	
 	#term with spin DOWN	
 	prefactor = 1
@@ -315,7 +284,10 @@ def SzszUp(i, j, m, N):
 			
 @jit
 def SzszDown(i, j, m, N):
-	
+	"""
+	Calculates the result of action of the operator Sz c_iDOWN c_jDOWN to a basis state m.
+	"""
+
 	#term with spin DOWN
 	prefactor=1	
 	m21 = flipBit(m, 2*(N-j)-1-1)
@@ -331,7 +303,7 @@ def SzszDown(i, j, m, N):
 @jit
 def spinInteractionOnState(i, j, state, N, basisList, lengthOfBasis):
 	"""
-	Calculates the result of the spin interacting term on sites i, j on a state and impState.
+	Calculates the result of the spin interacting term on sites i, j on a vector state.
 	"""
 	new_state = np.zeros(lengthOfBasis)
 
@@ -378,6 +350,8 @@ def HonState(d, alpha, J, state, N, basisList, lengthOfBasis):
 	basisList - a list of all basis states (list)
 	basisDict - a dictionary of positions of basis states in basisList (dictionary)
 	lengthOfBasis - the length of the state vector (int)
+	OUTPUT:
+	the resulting vector, equal to H|state> (np.array)
 	"""
 
 	kinetic, interaction, impurity = np.zeros(lengthOfBasis), np.zeros(lengthOfBasis), np.zeros(lengthOfBasis)
@@ -399,7 +373,8 @@ def HonState(d, alpha, J, state, N, basisList, lengthOfBasis):
 
 class HLinOP(LinearOperator):
 	"""
-	This is a class, built-in in scipy, which allows for a representation of a given function as a linear operator. The method _matvec() defines how it acts on a vector.
+	This is a class, built-in to scipy, which allows for a representation of a given function as a linear operator. The method _matvec() defines how it acts on a vector.
+	The operator can be diagonalised using the function scipy.sparse.linalg.eigsh().
 	"""	
 	def __init__(self, d, alpha, J, N, basisList, lengthOfBasis, dtype='float64'):
 		self.shape = (lengthOfBasis, lengthOfBasis)
@@ -488,7 +463,7 @@ def findGap(values, precision=1e-16):
 
 def findFirstExcited(values, precision=1e-16):
 	"""
-	From a given set of eigenvalues, finds the first excited state (state with smallest energy,
+	From a given set of eigenvalues, finds the first excited state (state with smallest energy
 	different than ground state). The resolution is set by precision.
 	"""
 	for i in range(1, len(values)):
