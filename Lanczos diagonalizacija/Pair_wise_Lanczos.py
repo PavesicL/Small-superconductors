@@ -93,7 +93,7 @@ def findGap(values, precision=1e-16):
 # BASIS DEFINITION #############################################################
 
 def allSinglyOccupiedPossibilities(N, n, npair):
-	"""
+		"""
 	Returns a list of lists of all permutations of singly occupied levels. There should be comb(n, (n-2np)) of them.
 	"""
 

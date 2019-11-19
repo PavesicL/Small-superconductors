@@ -1,28 +1,38 @@
 """
-Finds the spectrum and the eigenstates of the hamiltonian of a small superconductor, coupled to an impurity.
+Finds the spectrum and the eigenstates of the hamiltonian of a small superconductor, coupled to an impurity. In this specific implementation, one has control over the number of
+particles in the system and the total spin of the system. 
 
 IMPLEMENTATION
-The calculation is performed in the basis of occupation numbers: |S_z,imp, n_0UP, n_0DOWN, n_1UP, n_1DOWN, ... >.
-First we find all basis vectors in the Hilbert space of the system with N levels, which have a specified amount (n) of particles. This is done by the makeBase() function.  
-A state is represented by a vector of probability amplitudes, accompanied by basisList, which hold information of what basis state each index in the state vector represents. 
-The fermionic operators are implemented using bit-wise operations, specifically functions flipBit() and countSetBits(). The spin operators are also represented as fermionic
-operators (which works for S=1/2 at least), using S+ and S-.
+The calculation is performed in the basis of occupation numbers: |n_impUP, n_impDOWN, n_0UP, n_0DOWN, n_1UP, n_1DOWN, ... >.
+First we find all basis vectors in the Hilbert space of the system with N levels, which has a specified amount of particles with spin up (nUP) and spin down (nDOWN). 
+This is done by the makeBase() function. A state is represented by a vector of probability amplitudes, accompanied by basisList, which hold information of what basis state 
+each index in the state vector represents. The fermionic operators are implemented using bit-wise operations, specifically functions flipBit() and countSetBits(). The spin 
+operators are also represented as fermionic operators (which works for S=1/2 at least), using S+ and S-. Either we can extract results for a set combination of nUP and nDOWN,
+or take into account all possible pairs (nUP, nDOWN), to obtain the entire spectrum.
 
 INDEXING OF STATES IN THE STATE VECTOR: 
-The occupancy number of a state i, s is given as the 2i+s'th bit of the basis state, written in binary, where (spin) s=0 for UP and s=1 for down. 
-The offset of the given bit (counted from right to left) in the binary representation is (2N-1) - (2i+s) = 2(N-i)-1-s. The impurity spin state is at offset 2N.
+The occupancy number of a single particle state (i, s) is given as the 2i+s'th bit of the basis state, written in binary (and counted from the left), where (spin) s=0 for UP 
+and s=1 for down. 
+The offset of the given bit (counted from right to left) in the binary representation is (2N-1) - (2i+s) = 2(N-i)-1-s. The impurity spin state is at offset 2N and 2N+1.
 
 DIAGONALISATION
-Diagonalisation of the Hamiltonian is implemented in two ways.
-The exactDiag() function brute-forces all the matrix elements and diagonalises them using a numpy function. This works, bot not for cases much above N=n=5.
-The alternative is the Lanczos algorithm. To perform Lanczos diagonalisation, one only needs to know how a linear operator acts on a state. This is implemented
-using the numpy class LinearOperator. It allows exactly this - to define a linear operator and diagonalise it, using scipy.sparse.linalg.eigsh. 
-The second option is much faster. 
+Diagonalisation is implemented using the Lanczos algorithm. The linear operator H is implemented using the numpy class LinearOperator. It allows us to define a linear operator
+and diagonalise it, using scipy.sparse.linalg.eigsh. 
+The complete diagonalisation, in the functions LanczosDiag_states() and LanczosDiag_states() (if one wants to obtain the eigenvectors too) is done subspace by subspace. The
+smallest subspace of the Hamiltonian is one with defined number of particles (n) and total spin z of the system. Alternatively, one defines n and the number of particles with
+spin UP/DOWN in the system. Here, we have to count the impurity as a particle with spin in either direction, as H consists of terms like S+ s-ij, which conserve only the spin
+of the entire system. This is why we have nwimpUP and nwimpDOWN (number of particles with given spin, including the impurity) and it holds that 
+	nwimpUP + nwimpDOWN = n + 1,
+	1/2 (nwimpUP + nwimpDOWN) = Sz.
+All quantities in these two equations are constant in a given subspace. 
+It is possible to only obtain the spectrum of the system in the specified state (n, nwimpUP, nwimpDOWN), using LanczosDiag_nUPnDOWN or LanczosDiagStates_nUPnDOWN.
 
 NUMBA
-As numba dislikes dictionaries, this is a reworked verison of the same program. The previous version used a dictionary (basisDict), as a way to map between basis states and 
-indeces of the state vector. This works faster using numba. Numba also dislikes the numpy function for the binomial symbol (np.comb()), which is why the basis creation does
-not work with jit.
+The jit operator works nicely with everything.
+
+SPECTRAL TRANSITION
+
+
 """
 
 ################################################################################
@@ -49,45 +59,42 @@ def printV(vector, basisList, prec=0.1):
 		if abs(vector[i])>prec:
 			print(basisList[i], bin(basisList[i]), vector[i])
 
+def checkParams(N, n, nwimpUP, nwimpDOWN):
+	"""
+	Checks if the parameter values make sense.
+	"""
+	allOK = 1
+
+	if n>2*N:
+		print("WARNING: {0} particles is too much for {2} levels!".format(n, N))
+		allOK=0
+
+	if nwimpUP + nwimpDOWN != n+1:
+		print("WARNING: some mismatch in the numbers of particles!")
+		allOK=0
+
+	if allOK:
+		print("Param check OK.")
+					
 # BASIS ########################################################################
 
-def lengthOfBasisFunc(Nlevels, nParticles):
+@jit
+def makeBase(N, nwimpUP, nwimpDOWN):
 	"""
-	Returns the number of basis states for a given number of levels and a given number of particles. The number is equal to 
-	the number of possible configurations where we select nParticles on Nlevels, times 2 for the two states of the impurity.
+	Creates a basis
 	"""
-	a = 2 * comb(2*Nlevels, nParticles, exact=True)
-	return a
+	resList = []
 
-def defineBase(Nlevels, nParticles, lengthOfBasis):
-	"""
-	From all basis states for a system with N levels, returns a list of basis states with nParticles number of particles.
-	This defines a subspace of the Hilbert space with n-filling. The basis has all basis states as the system without the 
-	impurity (when the impurity is in state 0), plus all the basis states with an additional 1 attached in front of the number
-	(when the impurity is in state 1). The second part of the basis is obtained by adding 2^2N to all numbers in the original basis.
-	"""
-	resList = np.zeros(lengthOfBasis//2, dtype=int) 	#resList is doubled later in this function
+	for m in range(2**((2*N)+2)):
+		if impurityBits(m, N)==(0, 1) or impurityBits(m, N)==(1, 0):	#only one spin on the impurity		 
+			if countSetBits(m) == nwimpUP + nwimpDOWN:					#correct number of spins
+				if spinUpBits(m, N, allBits=True) == nwimpUP and spinDownBits(m, N, allBits=True) == nwimpDOWN:
+					resList.append(m)
 
-	#build a list of basis states
-	count=0
-	for i in range(2**(2*Nlevels)):
-		if countSetBits(i) == nParticles:
-			resList[count] = i
-			count+=1
+	lengthOfBasis = len(resList)
+	resList = np.array(resList)
 
-	addImp = 2**(2*Nlevels)		
-	resList = np.concatenate((resList, [i + addImp for i in resList]))		
-
-	return resList
-
-def makeBase(Nlevels, nParticles):
-	"""	
-	Calls the two previous functions and creates a basis - returns its length and a list of states.
-	"""	
-	lengthOfBasis = lengthOfBasisFunc(Nlevels, nParticles)
-	basisList = defineBase(Nlevels, nParticles, lengthOfBasis)
-
-	return lengthOfBasis, basisList
+	return lengthOfBasis, resList
 
 # BIT-WISE #####################################################################
 
@@ -107,6 +114,63 @@ def countSetBits(n):
 	return count 
 
 @jit
+def bit(m, off):
+	"""
+	Returns the value of a bit at offset off in integer m.
+	"""
+
+	if m & (1 << off):
+		return 1
+	return 0
+
+@jit
+def impurityBits(m, N):
+	"""
+	Returns the values of the impurity bits.
+	"""
+
+	return bit(m, 2*N+1), bit(m, 2*N)
+
+@jit
+def spinUpBits(m, N, allBits=False):
+	"""
+	Counts the number of spin down electrons in the state. If allBits, the impurity level is also counted.
+	"""
+
+	count=0
+	
+	if allBits:
+		for i in range(1, (2*N)+2, 2):
+			if bit(m, i)==1:
+				count+=1
+	else:
+		for i in range(1, 2*N, 2):
+			if bit(m, i)==1:
+				count+=1
+
+	return count		
+
+@jit
+def spinDownBits(m, N, allBits=False):
+	"""
+	Counts the number of spin down electrons in the state. If allBits, the impurity level is also counted.
+	"""
+
+	count=0
+
+	if allBits:
+		for i in range(0, (2*N)+2, 2):
+			if bit(m, i)==1:
+				count+=1	
+
+	else:
+		for i in range(0, 2*N, 2):
+			if bit(m, i)==1:
+				count+=1
+
+	return count	
+
+@jit
 def clearBitsAfter(m, off, length):
 	"""Clears all bits of a number m with length length with offset smaller OR EQUAL off. Used to determine the fermionic +/- prefactor."""
 	clearNUm = 0
@@ -122,7 +186,7 @@ def prefactor_offset(m, off, N):
 	"""
 
 	#turns off the impurity bit, as it does not contribute
-	turnOffImp = (2**(2*N))-1	#this is the number 100000..., where 1 is at the position of the impurity
+	turnOffImp = (2**(2*N))-1	#this is the number 100000..., where 1 is at the position of the impurity.
 	m = m & turnOffImp
 	#set bits to zero
 	m = clearBitsAfter(m, off, 2*N)
@@ -130,7 +194,6 @@ def prefactor_offset(m, off, N):
 	#count the remaining 1s
 	count = countSetBits(m)
 	
-
 	return (-1)**count
 
 # ELECTRON OPERATORS ###########################################################
@@ -194,11 +257,7 @@ def countingOp(i, s, m, N):
 	"""
 	Calculates the application of the counting operator to a basis state m. Returns 0 or 1, according to the occupation of the energy level.
 	"""
-	m1 = flipBit(m, 2*(N-i)-1-s)
-	if m1 < m:
-		return 1
-	else:
-		return 0
+	return bit(m, 2*(N-i)-1-s)
 
 @jit
 def CountingOpOnState(i, s, state, N, basisList, lengthOfBasis):
@@ -222,10 +281,7 @@ def impSz(m, N):
 	"""
 	Given a basis state, returns the spin Sz of the impurity. 0=UP, 1=DOWN.
 	"""
-	if m>=2**(2*N):
-		return 1
-	else:
-		return 0
+	return bit(m, 2*N)	#this bit specifies if the impurity has spin down. If it is 1, Sz=DOWN, otherwise, Sz=UP
 
 @jit
 def spinSpsm(i, j, m, N):
@@ -233,8 +289,9 @@ def spinSpsm(i, j, m, N):
 	Calculates the result of action of the operator S+ s-_ij to a basis state m.
 	"""
 
-	m1 = flipBit(m, 2*N)	#flip the impurity spin if it is down
-	if m1<m:
+	m1 = flipBit(m, 2*N)	
+	m1 = flipBit(m1, (2*N)+1)	#flip the impurity spin if it is down
+	if m1>m:
 		prefactor = 1
 		m2 = flipBit(m1, 2*(N-j)-1)	#c_jUP operator
 		if m2<m1:
@@ -252,8 +309,9 @@ def spinSmsp(i, j, m, N):
 	"""
 	Calculates the result of action of the operator S- s+_ij to a basis state m.
 	"""
-	m1 = flipBit(m, 2*N)	#flip the impurity spin if it is up
-	if m1>m:
+	m1 = flipBit(m, 2*N)	
+	m1 = flipBit(m1, (2*N)+1)	#flip the impurity spin if it is up
+	if m1<m:
 		prefactor = 1
 		m2 = flipBit(m1, 2*(N-j)-1-1)	#C_jDOWN operator
 		if m2<m1:
@@ -281,7 +339,7 @@ def SzszUp(i, j, m, N):
 			prefactor *= prefactor_offset(m, 2*(N-j)-1, N)
 			prefactor *= prefactor_offset(m11, 2*(N-i)-1, N)
 			
-			return m12, prefactor
+			return prefactor, m12
 	return 0, 0
 			
 @jit
@@ -299,7 +357,7 @@ def SzszDown(i, j, m, N):
 			prefactor *= prefactor_offset(m, 2*(N-j)-1-1, N)
 			prefactor *= prefactor_offset(m21, 2*(N-i)-1-1, N)
 			
-			return m22, prefactor
+			return prefactor, m22
 	return 0, 0
 	
 @jit
@@ -314,29 +372,39 @@ def spinInteractionOnState(i, j, state, N, basisList, lengthOfBasis):
 
 		if coef!=0:	
 			
-			
 			#S+ s-		
 			prefactor1, m1 = spinSpsm(i, j, basisList[k], N)
 			if m1!=0:
 				#Check crcrananOnState() for comments
 				new_state[np.searchsorted(basisList, m1)] += 0.5 * coef * prefactor1 
+				
+				if basisList[np.searchsorted(basisList, m1)] != m1:
+					print("NOT IN basisList!")
 
 			#S- s+	
 			prefactor2, m2 = spinSmsp(i, j, basisList[k], N)	
 			if m2!=0:
 				#Check crcrananOnState() for comments
 				new_state[np.searchsorted(basisList, m2)] += 0.5 * coef * prefactor2
-			
+				
+				if basisList[np.searchsorted(basisList, m2)] != m2:
+					print("NOT IN basisList!")			
 
 			#Sz sz			
 			impSCoef = -2*impSz(basisList[k], N) + 1	#gives 1 for Sz=0 (UP) and -1 for Sz=1 (DOWN)
-			m3, prefactor3 = SzszUp(i, j, basisList[k], N)
+			prefactor3, m3 = SzszUp(i, j, basisList[k], N)
 			if m3 != 0:
 				new_state[np.searchsorted(basisList, m3)] += 0.5 * impSCoef * 0.5 * coef * prefactor3  
+				
+				if basisList[np.searchsorted(basisList, m3)] != m3:
+					print("NOT IN basisList!")
 			
-			m4, prefactor4 = SzszDown(i, j, basisList[k], N)
+			prefactor4, m4 = SzszDown(i, j, basisList[k], N)
 			if m4 != 0:	
 				new_state[np.searchsorted(basisList, m4)] += -0.5 * impSCoef * 0.5 * coef * prefactor4 
+				
+				if basisList[np.searchsorted(basisList, m4)] != m4:
+					print("NOT IN basisList!")
 
 	return new_state		
 
@@ -406,53 +474,106 @@ def eps(i, d, N):
 
 # DIAGONALISATION ##############################################################
 
-def exactDiag(N, n, d, alpha, J):
+def LanczosDiag_nUPnDOWN(N, n, nwimpUP, nwimpDOWN, d, alpha, J, NofValues=4, verbosity=False):
 	"""
-	Diagonalises the hamiltonian using exact diagonalisation.
+	Returns the spectrum of the Hamiltonian in the subspace, defined by
+	N - number of levels
+	n - number of particles in the system (EXCLUDING THE IMPURITY)
+	nwimpUP, nwimpDOWN - number of particles with spin UP/DOWN, INCLUDING THE IMPURITY SPIN!
+	d, alpha, J - physical constants.
 	"""
+	
+	lengthOfBasis, basisList = makeBase(N, nwimpUP, nwimpDOWN)
 
-	lengthOfBasis, basisList = makeBase(N, n)
+	if verbosity:
+		checkParams(N, n, nwimpUP, nwimpDOWN)
 
-	matrika1=[]
-	for i in range(lengthOfBasis):
-		
-		stanje1 = np.zeros(lengthOfBasis)
-		stanje1[i] = 1
+	if lengthOfBasis==1:
+		Hs = HonState(d, alpha, J, np.array([1]), N, basisList, lengthOfBasis)
+		values = np.dot(basisList[0], Hs)
 
-		vrstica = []
-		for j in range(lengthOfBasis):
-			stanje2 = np.zeros(lengthOfBasis)
-			stanje2[j] = 1
-
-			vrstica.append(np.dot(stanje2, HonState(d, alpha, J, stanje1, N, basisList, lengthOfBasis)))
-			
-
-		matrika1.append(vrstica)	
-
-	val1, vec1 = np.linalg.eigh(matrika1)
- 
-	return val1, vec1
-
-def LanczosDiag(N, n, d, alpha, J, NofValues=4):
-	"""
-	For a given number of levels N, and given number of particles n, return the eigenenergies of the Hamiltonian.
-	"""
-
-	lengthOfBasis, basisList = makeBase(N, n)
-	LinOp = HLinOP(d, alpha, J, N, basisList, lengthOfBasis) 
-	values = eigsh(LinOp, k=NofValues, which="SA", ncv = 10*NofValues, return_eigenvectors=False)[::-1]
+	else:	
+		LinOp = HLinOP(d, alpha, J, N, basisList, lengthOfBasis) 
+		values = eigsh(LinOp, k=min(lengthOfBasis-1, NofValues), which="SA", return_eigenvectors=False)[::-1]
 
 	return values
 
-def LanczosDiag_states(N, n, d, alpha, J, NofValues=4):
+def LanczosDiagStates_nUPnDOWN(N, n, nwimpUP, nwimpDOWN, d, alpha, J, NofValues=4, verbosity=False):
+	"""
+	Returns the spectrum of the Hamiltonian in the subspace, defined by
+	N - number of levels
+	n - number of particles in the system (EXCLUDING THE IMPURITY)
+	nwimpUP, nwimpDOWN - number of particles with spin UP/DOWN, INCLUDING THE IMPURITY SPIN!
+	d, alpha, J - physical constants.
+	"""
+	
+	lengthOfBasis, basisList = makeBase(N, nwimpUP, nwimpDOWN)
+	
+	if verbosity:
+		checkParams(N, n, nwimpUP, nwimpDOWN)
+
+	if lengthOfBasis==1:
+		Hs = HonState(d, alpha, J, np.array([1]), N, basisList, lengthOfBasis)
+		values = np.dot(basisList[0], Hs)
+		vectors = [np.array([1])]
+
+	else:	
+		LinOp = HLinOP(d, alpha, J, N, basisList, lengthOfBasis) 
+		values, vectors = eigsh(LinOp, k=min(lengthOfBasis-1, NofValues), which="SA")
+
+	return values, vectors, basisList
+
+def LanczosDiag(N, n, d, alpha, J, NofValues=4, verbosity=False):
+	"""
+	For a given number of levels N, and given number of particles n, return the eigenenergies of the Hamiltonian.
+	Computed as a combination of eigenenergies from all smallest subspace with set number of particles (n) and 
+	total system spin (Sz = 1/2 (nwimpUP - nwimpDOWN)).
+	"""
+
+	val=[]
+
+	for nwimpUP in range(max(0, n-N), min(N+1, n+1) + 1):	#+1 in range to take into account also the last case	
+
+		nwimpDOWN = n - nwimpUP + 1
+
+		if verbosity:
+			print(nwimpUP, nwimpDOWN)
+
+		val.extend(LanczosDiag_nUPnDOWN(N, n, nwimpUP, nwimpDOWN, d, alpha, J, NofValues=NofValues, verbosity=verbosity))
+
+	return np.sort(val)	
+
+def LanczosDiag_states(N, n, d, alpha, J, NofValues=4, verbosity=False):
 	"""
 	For a given number of levels N, and given number of particles n, return the eigenenergies and eigenstates of the Hamiltonian.
 	"""
-	lengthOfBasis, basisList = makeBase(N, n)
-	LinOp = HLinOP(d, alpha, J, N, basisList, lengthOfBasis) 
-	values, vectors = eigsh(LinOp, k=NofValues, which="SA")
 
-	return values, vectors, basisList
+	values, vectors, basisLists = [], [], []
+
+	for nwimpUP in range(max(0, n-N), min(N+1, n+1) + 1):	#+1 in range to take into account also the last case	
+
+		nwimpDOWN = n - nwimpUP + 1
+
+		if verbosity:
+			print(nwimpUP, nwimpDOWN)
+
+		val, vec, basisList = LanczosDiagStates_nUPnDOWN(N, n, nwimpUP, nwimpDOWN, d, alpha, J, NofValues=4, verbosity=verbosity)
+
+		values.extend(val)
+		vectors.extend(np.transpose(vec))
+		basisLists.extend([basisList for i in range(len(val))])
+
+
+	sortedIndices = np.argsort(values)	
+	values, vectors, basisLists = np.asarray(values), np.asarray(vectors), np.asarray(basisLists)
+
+
+	SortedValues = np.take_along_axis(values, sortedIndices, axis=0)
+	SortedVectors = np.take_along_axis(vectors, sortedIndices, axis=0)
+	SortedBasisLists = np.take_along_axis(basisLists, sortedIndices, axis=0)
+
+
+	return SortedValues, SortedVectors, SortedBasisLists
 
 # DATA ANALYSIS ################################################################
 
@@ -504,7 +625,6 @@ def transitionE(N, d, alpha, J, initn, finaln):
 	elif initn<finaln:	#n->n+1 process
 		return finalValue - initValue
 			
-
 # CALCULATION ##################################################################
 states_print = 0
 spectrum_J_plot = 0
@@ -512,55 +632,6 @@ spectrum_alpha_plot = 0
 spectral_transition_ofJ_plot = 0
 spectral_transition_of_alpha_plot = 0
 ################################################################################
-
-N, n = 8, 8
-d, alpha, J = 1, 1, 1
-
-vals = LanczosDiag(N, n, d, alpha, J, NofValues=18)
-print(vals)
-
-
-if 0:
-	NN = 5
-	nn = NN
-	dd, aalpha, JJ = 1, 0, 0
-	NofValues = 6
-
-	print("ENERGIJE")
-	print([eps(i, dd, NN) for i in range(NN)])
-	print()
-
-	for k in range(1):
-		lengthOfBasis, basisList = makeBase(NN, nn)
-
-		a1, b1, c1 = LanczosDiag_states(NN, nn, dd, aalpha, JJ, NofValues=NofValues)
-
-		a2, b2, c2 = LanczosDiag_states(NN, nn+1, dd, aalpha, JJ, NofValues=NofValues)
-
-		#print(basisList)
-		#for i in basisList:
-		#	print(bin(i))
-		val, vec = exactDiag(NN, nn, dd, aalpha, JJ)
-		
-		print(a1[0], a2[0])
-		print(a1-a2)
-		print(a1 - val[:NofValues])
-		print(a2 - val[:NofValues])
-		print(val[:NofValues])
-		"""
-		#print(a1-a2)
-		print("ENERGIJA")
-		print(val[:5])
-
-		print("VEKTOR GS")
-		printV(vec[:, 0], basisList, prec=0.1)
-		
-		print("VEKTOR ES 1")
-		printV(vec[:, 1], basisList, prec=0.1)
-		
-		print("VEKTOR ES 2")
-		printV(vec[:, 2], basisList, prec=0.1)
-		"""
 
 if states_print:
 
@@ -570,7 +641,7 @@ if states_print:
 	J = N * 0.1
 	NNN = 20
 
-	val, vec, basisList = LanczosDiag_states(N, n, d, alpha, J, NofValues=NNN)
+	val, vec, bas = LanczosDiag_states(N, n, d, alpha, J, NofValues=4)
 	
 	#val, vec = exactDiag(N, n, d, alpha, J)
 
@@ -578,14 +649,9 @@ if states_print:
 	print()
 	
 	for i in range(len(val)):
-		v = vec[:, i]
-		print("STATE", i, val[i])
-		for k in range(len(v)):
-			if abs(v[k])>0.1:
-				print(k, v[k], bin(basisList[k]))
+		print("STATE {0}".format(i))
+		printV(vec[i], bas[i], prec=0.1)
 		print()
-
-
 
 if spectrum_J_plot:
 	save=0
@@ -613,12 +679,7 @@ if spectrum_J_plot:
 			#for J in [1.7777777777777777]:
 				print(J)
 
-				if N<5:
-					lengthOfBasis, basisList = makeBase(N, n)
-					values, vec = exactDiag(d, alpha, J, N, basisList, lengthOfBasis)
-				else:
-					values = LanczosDiag(N, n, d, alpha, J, NofValues=NofStates)
-				#values, vec, basisList = LanczosDiag_states(N, n, d, alpha, J, NofValues=NofStates)
+				values = LanczosDiag(N, n, d, alpha, J, NofValues=NofStates, verbosity=False)
 
 				#print(values)
 
@@ -676,7 +737,7 @@ if spectrum_alpha_plot:
 
 				
 
-				values = LanczosDiag(N, N, d, alpha, J, NofStates)
+				values = LanczosDiag(N, n, d, alpha, J, NofValues=NofStates, verbosity=False)
 
 				
 				for i in range(NofStates):
@@ -713,96 +774,10 @@ if spectrum_alpha_plot:
 
 if spectral_transition_ofJ_plot:
 	
-	N=7
-	n=9
-	d, alpha = 1, 1
+	print("PREMISLI TO")
 
-	initn1, finaln1 = n, n+1
-	initn2, finaln2 = n, n-1
-
-	DeltaJ1 = transitionE(N, d, alpha, 0, initn1, finaln1)
-	DeltaJ2 = transitionE(N, d, alpha, 0, initn2, finaln2)
-
-
-	EpList, EmList = [], []	
-
-	Jmin, Jmax = 0, 3
-	Jlist = np.linspace(Jmin, Jmax, 10)
-	for J in Jlist:
-		print(N, J)
-		
-		EpList.append(transitionE(N, d, alpha, J, initn1, finaln1))
-		EmList.append(transitionE(N, d, alpha, J, initn2, finaln2))
-
-	print(EpList)
-	print(EmList)
-
-	plt.plot(Jlist, EpList/DeltaJ1, label=r"$n={0}\rightarrow {1}$".format(initn1, finaln1))
-
-	plt.plot(Jlist, EmList/DeltaJ2, label=r"$n={0}\rightarrow {1}$".format(initn2, finaln2))	
-		
-
-	plt.xlabel(r"$J$")
-	plt.ylabel(r"$\Delta E / \Delta E(J=0)$")
-
-	plt.title(r"$N={0}$".format(N))
-
-	plt.legend()
-	plt.grid()
-	plt.tight_layout()
-
-	plt.show()
 
 if spectral_transition_of_alpha_plot:
 
-	N=7
-	n=7
-	d, J = 1, 0.6
-
-	initn1, finaln1 = n, n+1
-	initn2, finaln2 = n, n-1
-
-	EpList, EmList = [], []	
-
-	dDeltaMin, dDeltaMax = 0.1, 10
-	dDeltaList = np.linspace(dDeltaMin, dDeltaMax, 10)
-	for dDelta in dDeltaList:
-
-		omegaD = 0.5*N*d	
-		alpha = 1/(np.arcsinh(dDelta*0.5*omegaD/d))
-		Delta = omegaD/(2*np.sinh(1/alpha))	
-		
-		print(N, dDelta)
-		
-		Ep = transitionE(N, d, alpha, J, initn1, finaln1)
-		Em = transitionE(N, d, alpha, J, initn2, finaln2)
-
-		DeltaJ1 = transitionE(N, d, alpha, 0, initn1, finaln1)
-		DeltaJ2 = transitionE(N, d, alpha, 0, initn2, finaln2)
-	
-		EpList.append(Ep/DeltaJ1)
-		EmList.append(Em/DeltaJ2)
-	
-
-	print(EpList)
-	print(EmList)
-
-	plt.plot(dDeltaList, EpList, label=r"$n={0}\rightarrow {1}$".format(initn1, finaln1))
-
-	plt.plot(dDeltaList, EmList, label=r"$n={0}\rightarrow {1}$".format(initn2, finaln2))	
-	
-	#plt.xscale("log")
-	#plt.yscale("log")	
-
-	plt.xlabel(r"$d/\Delta$")
-	plt.ylabel(r"$\Delta E / \Delta E(J=0)$")
-
-	plt.title(r"$N={0}$".format(N))
-
-	plt.legend()
-	plt.grid()
-	plt.tight_layout()
-
-	plt.show()
-
+	print("PREMISLI TO")
 
