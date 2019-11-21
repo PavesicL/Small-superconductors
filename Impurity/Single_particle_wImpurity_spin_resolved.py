@@ -27,6 +27,10 @@ of the entire system. This is why we have nwimpUP and nwimpDOWN (number of parti
 All quantities in these two equations are constant in a given subspace. 
 It is possible to only obtain the spectrum of the system in the specified state (n, nwimpUP, nwimpDOWN), using LanczosDiag_nUPnDOWN or LanczosDiagStates_nUPnDOWN.
 
+NOTE (POSSIBLE CONFUSION!)
+In the program, the impurity spin is represented like a fermion (two states with spin UP and DOWN), where the occupation number of the level is always exactly 1. This is NOT
+counted as a particle or a level in the system (N and n do not incorporate the impurity), while for the purposes of total spin in the system, one has to count the impurity spin.
+
 NUMBA
 The jit operator works nicely with everything.
 
@@ -75,13 +79,25 @@ def checkParams(N, n, nwimpUP, nwimpDOWN):
 
 	if allOK:
 		print("Param check OK.")
-					
+
+def setAlpha(N, d, dDelta):
+	"""
+	Returns alpha for a given dDelta. 
+	"""
+	omegaD = 0.5*N*d	
+	Delta = d/dDelta
+	return 1/(np.arcsinh(omegaD/(Delta)))
+
+
 # BASIS ########################################################################
 
 @jit
 def makeBase(N, nwimpUP, nwimpDOWN):
 	"""
-	Creates a basis
+	Creates a basis of a system with N levels, nwimpUP fermions with spin UP and nwimpDOWN fermions with spin DOWN, including the impurity. 
+	The impurity level is restricted to exactly one fermion, and is not included in the N levels fo the system. 
+	The resulting basis defines the smallest ls subset of the Hamiltonian, where the number of particles and the total spin z of the system 
+	are good quantum numbers.
 	"""
 	resList = []
 
@@ -105,12 +121,12 @@ def flipBit(n, offset):
 	return(n ^ mask)
 
 @jit
-def countSetBits(n): 
+def countSetBits(m): 
 	"""Counts the number of bits that are set to 1 in a given integer."""
 	count = 0
-	while (n): 
-		count += n & 1
-		n >>= 1
+	while (m): 
+		count += m & 1
+		m >>= 1
 	return count 
 
 @jit
@@ -546,6 +562,8 @@ def LanczosDiag(N, n, d, alpha, J, NofValues=4, verbosity=False):
 def LanczosDiag_states(N, n, d, alpha, J, NofValues=4, verbosity=False):
 	"""
 	For a given number of levels N, and given number of particles n, return the eigenenergies and eigenstates of the Hamiltonian.
+	Eigenvectors are already transposed, so SortedVectors[i] corresponds to the eigenstate with energy SortedValues[i], with the
+	basis given with SortedBasisLists[i].
 	"""
 
 	values, vectors, basisLists = [], [], []
@@ -574,6 +592,120 @@ def LanczosDiag_states(N, n, d, alpha, J, NofValues=4, verbosity=False):
 
 
 	return SortedValues, SortedVectors, SortedBasisLists
+
+# TRANSITION ENERGY ############################################################
+
+def addElectron(N, n, d, alpha, J, add=1):
+	"""
+	Calculates the energy of transition (= difference of ground state energies) between ground states of 
+	the subspace with n and n+add particles.
+	"""	
+
+	#FIND THE GS FOR THE INITIAL STATE
+	#initVal = LanczosDiag(N, n, d, alpha, J, NofValues=4)[0]	#this is the ground state of the initial system	
+	initVal, b1, c1 = LanczosDiag_states(N, n, d, alpha, J, NofValues=4)
+	initVal = initVal[0]
+
+	#ADD ELECTRONS
+	n = n + add
+
+	#FIND THE GS FOR THE FINAL STATE
+	#finalVal = LanczosDiag(N, n, d, alpha, J, NofValues=4)[0]	#this is the ground state of the final system	
+	finalVal, b2, c2 = LanczosDiag_states(N, n, d, alpha, J, NofValues=4)
+	finalVal = finalVal[0]
+
+	return finalVal - initVal
+
+def addElectronDefindedFinalSpin(N, n, spin, d, alpha, J, add=1):
+	"""
+	Calculates the energy of transition (= difference of ground state energies) between ground states of 
+	the subspace (n, any Sz) and the subspace (n=n+1, Sz=Sz'+1); where Sz' is spin of the computed GS 
+	with n particles. 
+	If add==-1, this calculates the energy of the process of taking away an electron. Actually, the 
+	function might work with add as any whole number. The process is then adding add electrons, where
+	add<0 corresponds to taking away the specified number of electrons (not tested).
+	"""
+
+	print("GS JE LAHKO DEGENERIRANO, PREVERI KAJ TAKRAT!")
+
+	#FIND THE GS FOR THE INITIAL STATE
+	a, b, c = LanczosDiag_states(N, n, d, alpha, J, NofValues=4, verbosity=False)
+	initVal, initVec, initBasisList = a[0], b[0], c[0]		#this is the ground state of the initial system
+
+	print("INIT")
+	print(initVal)
+	printV(initVec, initBasisList, prec=0.1)
+	print()
+
+	#FIND QUANTUM NUMBERS OF THE GS
+	n, nwimpUP, nwimpDOWN = findSector(initBasisList, N)
+
+	if spin == "up":
+
+		nwimpUP = nwimpUP + 1*add
+		n = n + 1*add
+		#FIND THE STATE AFTER TRANSITION
+		a, b, c = LanczosDiagStates_nUPnDOWN(N, n, nwimpUP, nwimpDOWN, d, alpha, J, NofValues=4, verbosity=False)
+		finalVal, finalVec, finalBasisList = a[0], b[:, 0], c
+
+	elif spin == "down":
+
+		nwimpDOWN = nwimpDOWN + 1*add
+		n = n + 1*add
+		#FIND THE STATE AFTER TRANSITION
+		a, b, c = LanczosDiagStates_nUPnDOWN(N, n, nwimpUP, nwimpDOWN, d, alpha, J, NofValues=4, verbosity=False)
+		finalVal, finalVec, finalBasisList = a[0], b[:, 0], c
+
+	print("FINAL")
+	print(finalVal)
+	printV(finalVec, finalBasisList, prec=0.1)
+	print()
+	print("FINAL 2")
+	print(a[1])
+	printV(finalVec, finalBasisList, prec=0.1)
+	print()
+
+	return finalVal - initVal, finalVal, initVal	
+
+def addElectronDefinedInitialFinalSpin(N, n, nwimpUP, nwimpDOWN, spin, d, alpha, J, add=1):
+	"""
+	Calculates the energy of transition (= difference of ground state energies) between ground states of 
+	the subspace (n, Sz) and the subspace (n=n+1, Sz=Sz+1).
+	If add==-1, this calculates the energy of the process of taking away an electron. Actually, the 
+	function might work with add as any whole number. The process is then adding add electrons, where
+	add<0 corresponds to taking away the specified number of electrons (not tested).
+	"""
+
+	print("GS JE LAHKO DEGENERIRANO, PREVERI KAJ TAKRAT!")
+
+	#FIND THE GS FOR THE INITIAL STATE
+	a, b, c = LanczosDiagStates_nUPnDOWN(N, n, nwimpUP, nwimpDOWN, d, alpha, J, NofValues=4, verbosity=False)
+	initVal, initVec, initBasisList = a[0], b[0], c 			#this is the ground state of the initial system
+
+
+	if spin == "up":
+
+		nwimpUP = nwimpUP + 1*add
+		n = n + 1*add
+		#FIND THE STATE AFTER TRANSITION
+		a, b, c = LanczosDiagStates_nUPnDOWN(N, n, nwimpUP, nwimpDOWN, d, alpha, J, NofValues=4, verbosity=False)
+		finalVal, finalVec, finalBasisList = a[0], b[:, 0], c
+
+	elif spin == "down":
+
+		nwimpDOWN = nwimpDOWN + 1*add
+		n = n + 1*add
+		#FIND THE STATE AFTER TRANSITION
+		a, b, c = LanczosDiagStates_nUPnDOWN(N, n, nwimpUP, nwimpDOWN, d, alpha, J, NofValues=4, verbosity=False)
+		finalVal, finalVec, finalBasisList = a[0], b[:, 0], c	
+
+	print("FINAL:")
+	print(finalVal)
+	print(printV(finalVec, finalBasisList, prec=0.1))
+	print()
+
+
+	return finalVal - initVal, finalVal, initVal
 
 # DATA ANALYSIS ################################################################
 
@@ -624,13 +756,36 @@ def transitionE(N, d, alpha, J, initn, finaln):
 		return initValue - finalValue
 	elif initn<finaln:	#n->n+1 process
 		return finalValue - initValue
-			
+
+def findSector(basisList, N):
+	"""
+	For a state vector, written in the basis basisList, find which subspace of the hamiltonian it is from.
+	Returns the number of particles n and the total spin of the system Sz.
+	The assumption is that all states in the basis are from the same subspace.
+	"""
+
+	m = basisList[0]
+
+	n = countSetBits(m) - 1	#impurity is not counted as a particle
+
+	nwimpUP, nwimpDOWN = 0, 0
+	for off in range((2*N)+2):
+		if off%2==0 and bit(m, off):		#even offset are spin down states 
+			nwimpDOWN += 1
+
+		elif off%2!=0 and bit(m, off):	#odd offset correspond to spin up states
+			nwimpUP += 1
+
+	return n, nwimpUP, nwimpDOWN		
+
 # CALCULATION ##################################################################
 states_print = 0
 spectrum_J_plot = 0
 spectrum_alpha_plot = 0
 spectral_transition_ofJ_plot = 0
 spectral_transition_of_alpha_plot = 0
+parity_gap_odd_plot = 0
+parity_gap_even_plot = 0
 ################################################################################
 
 if states_print:
@@ -661,9 +816,9 @@ if spectrum_J_plot:
 	d = 1
 	Jmin, Jmax = 0, 5
 
-	for N in [6, 7]:
+	for N in [6]:
 		n=N
-		for dDelta in [0.1]:
+		for dDelta in [10]:
 			omegaD = 0.5*N*d	
 			alpha = 1/(np.arcsinh(dDelta*0.5*omegaD/d))
 			Delta = omegaD/(2*np.sinh(1/alpha))	
@@ -773,11 +928,213 @@ if spectrum_alpha_plot:
 				plt.show()
 
 if spectral_transition_ofJ_plot:
-	
-	print("PREMISLI TO")
+	save=1
 
+	print("N, dDelta")
+	for N in [6, 7]:
+		print()
+		
+		n = N
+		d = 1 
+		
+		for dDelta in [0.1, 1, 10]:	
+			alpha = setAlpha(N, d, dDelta)
+			
+			print(N, dDelta)
+
+			Jmin, Jmax = 0*d, 10*d
+
+			Elist1, Elist2 = [], []
+			Jlist = np.linspace(Jmin, Jmax, 10)
+			for J in Jlist:
+
+				print(J)
+
+				a = addElectron(N, n, d, alpha, J, add=1)
+				b = addElectron(N, n, d, alpha, J, add=-1)		
+				c = addElectron(N, n, d, alpha, 0, add=1)
+				e = addElectron(N, n, d, alpha, 0, add=-1)
+
+				if N%2==0:
+					parityGap = 0.5*c + 0.5*e 
+				else:
+					parityGap = -1*(0.5*c + 0.5*e) 
+
+
+				Elist1.append(a/parityGap)	
+				Elist2.append(b/parityGap)	
+
+
+			Jlist = Jlist/d
+
+			plt.plot(Jlist, Elist1, label=r"$n \rightarrow n+1$")
+			plt.scatter(Jlist, Elist1)
+			plt.plot(Jlist, Elist2, label=r"$n \rightarrow n-1$")
+			plt.scatter(Jlist, Elist2)
+
+			plt.title(r"$N={0}$, $\alpha={1}$, $d/\Delta={2}$".format(N, alpha, dDelta))
+			plt.xlabel(r"$J/d$")
+			plt.ylabel(r"$\Delta E/\Delta_P$")
+
+			plt.legend()
+
+			plt.grid()
+			plt.tight_layout()
+				
+			if save:
+				name = "TransitionE_N{0}_dDelta{1}.pdf".format(N, dDelta)
+				plt.savefig("Slike/"+name)
+				plt.close()	
+				print("SAVED")
+			else:
+				plt.show()
 
 if spectral_transition_of_alpha_plot:
 
-	print("PREMISLI TO")
+	N = 6
+	n = N
+
+	d, J = 1, 0
+	dDeltamin, dDeltamax = 0.1, 10
+
+	Elist1, Elist2 = [], []
+
+	dDeltaList = np.linspace(dDeltamin, dDeltamax, 10)
+	for dDelta in dDeltaList:
+
+		Delta = d/dDelta
+		omegaD = 0.5*N*d	
+	
+		alpha = 1/(np.arcsinh(omegaD/(2*Delta)))
+
+		print(dDelta, Delta)
+
+		a = addElectron(N, n, d, alpha, J, add=1)
+		b = addElectron(N, n, d, alpha, J, add=-1)
+
+		print(a, b)
+		print()
+
+		Elist1.append(a/Delta)	
+		Elist2.append(b/Delta)	
+	
+
+	plt.plot(dDeltaList, Elist1, label=r"$n \rightarrow n+1$")
+	plt.scatter(dDeltaList, Elist1)
+	plt.plot(dDeltaList, Elist2, label=r"$n \rightarrow n-1$")
+	plt.scatter(dDeltaList, Elist2)
+
+	plt.legend()
+
+	plt.title(r"$N={0}$".format(N))
+	plt.xlabel(r"$d/\Delta$")
+	plt.ylabel(r"$\Delta E$")
+
+	plt.grid()
+	plt.tight_layout()
+	plt.show()
+
+if parity_gap_odd_plot:
+	saved=0
+
+	N = 9
+	n = N
+
+	d, J = 1, 0
+	dDeltamin, dDeltamax = 0.1, 4
+
+	parityGapList = []
+
+	dDeltaList = np.linspace(dDeltamin, dDeltamax, 20)
+	for dDelta in dDeltaList:
+
+		Delta = d/dDelta
+		omegaD = 0.5*N*d	
+	
+		alpha = 1/(np.arcsinh(omegaD/(Delta)))
+
+		print(dDelta, Delta, alpha)
+
+		a = addElectron(N, n, d, alpha, J, add=1)
+		b = addElectron(N, n, d, alpha, J, add=-1)
+
+		parityGap = -1*(0.5*a + 0.5*b) 
+		parityGapList.append(parityGap/Delta)	
+	
+	
+
+	plt.plot(dDeltaList, parityGapList)
+	plt.scatter(dDeltaList, parityGapList)
+		
+
+	plt.legend()
+
+	plt.title(r"$N={0}$".format(N))
+	plt.xlabel(r"$d/\Delta$")
+	plt.ylabel(r"$\Delta_P/\Delta$")
+
+	plt.grid()
+	plt.tight_layout()
+
+	if saved:
+		name = "ParityGap_odd.pdf"
+		plt.savefig("Slike/"+name)
+		plt.close()	
+		print("SAVED")
+	else:
+		plt.show()
+
+if parity_gap_even_plot:
+	save=0
+
+	N = 6
+	for N in [4, 6, 8, 10]:
+		n = N
+		print()
+		print(N)
+		d, J = 1, 0
+		dDeltamin, dDeltamax = 0.1, 4
+
+		parityGapList = []
+
+		dDeltaList = np.linspace(dDeltamin, dDeltamax, 10)
+		for dDelta in dDeltaList:
+
+			Delta = d/dDelta
+			omegaD = 0.5*N*d	
+		
+			alpha = 1/(np.arcsinh(omegaD/(Delta)))
+
+			print(dDelta, Delta, alpha)
+
+			a = addElectron(N, n, d, alpha, J, add=1)
+			b = addElectron(N, n, d, alpha, J, add=-1)
+
+			parityGap = 0.5*a + 0.5*b 
+			parityGapList.append(parityGap/Delta)	
+		
+		
+
+		#plt.plot(dDeltaList, parityGapList)
+		plt.scatter(dDeltaList, parityGapList, label=r"$N={0}$".format(N))
+		
+
+	plt.legend()
+
+	#plt.title(r"$N={0}$".format(N))
+	plt.xlabel(r"$d/\Delta$")
+	plt.ylabel(r"$\Delta_P/\Delta$")
+
+	plt.grid()
+	plt.tight_layout()
+
+	if save:
+		name = "ParityGap_even.pdf"
+		plt.savefig("Slike/"+name)
+		plt.close()	
+		print("SAVED")
+	else:
+		plt.show()
+
+
 
