@@ -93,7 +93,7 @@ def findGap(values, precision=1e-16):
 # BASIS DEFINITION #############################################################
 
 def allSinglyOccupiedPossibilities(N, n, npair):
-		"""
+	"""
 	Returns a list of lists of all permutations of singly occupied levels. There should be comb(n, (n-2np)) of them.
 	"""
 
@@ -395,13 +395,15 @@ def getEigenstates(N, n, d, alpha, NofEgienstates=2):
 ################################################################################
 spectroscopic_gap_plot = 0
 eigenstates_plot = 0
-eigenstates_of_alpha_plot = 1
+eigenstates_of_alpha_plot = 0
 ################################################################################
 
-if 0:
+if 1:
 	print("START")
-	N = 10
-	a = getSpectrum(N, N, 1, 1)
+	N = 4
+	d, alpha = 1, 0
+	a = getSpectrum(N, N, d, alpha)
+	print(a)
 	print("DONE")
 
 

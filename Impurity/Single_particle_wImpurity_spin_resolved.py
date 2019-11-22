@@ -130,6 +130,14 @@ def countSetBits(m):
 	return count 
 
 @jit
+def countBitsFromOffset(m, off, N):
+	count=0
+	for i in range(off+1, 2*N):
+		count+=bit(m, i)
+	
+	return (-1)**count	
+
+@jit
 def bit(m, off):
 	"""
 	Returns the value of a bit at offset off in integer m.
@@ -137,7 +145,8 @@ def bit(m, off):
 
 	if m & (1 << off):
 		return 1
-	return 0
+	else:
+		return 0
 
 @jit
 def impurityBits(m, N):
@@ -150,7 +159,7 @@ def impurityBits(m, N):
 @jit
 def spinUpBits(m, N, allBits=False):
 	"""
-	Counts the number of spin down electrons in the state. If allBits, the impurity level is also counted.
+	Counts the number of spin up electrons in the state. If allBits, the impurity level is also counted.
 	"""
 
 	count=0
@@ -200,17 +209,24 @@ def prefactor_offset(m, off, N):
 	"""
 	Calculates the fermionic prefactor for a fermionic operator, acting on site given with the offset off. Sets all succeeding bits to zero and count the rest. 
 	"""
-
+	count=0
+	for i in range(off+1, 2*N):	#count bits from offset to (not including) the impurity
+		count+=bit(m, i)
+	
+	"""
+	#THIS WORKS MUCH SLOWER BUT IS CLEARER TO UNDERSTAND
 	#turns off the impurity bit, as it does not contribute
 	turnOffImp = (2**(2*N))-1	#this is the number 100000..., where 1 is at the position of the impurity.
 	m = m & turnOffImp
 	#set bits to zero
-	m = clearBitsAfter(m, off, 2*N)
-
-	#count the remaining 1s
-	count = countSetBits(m)
 	
-	return (-1)**count
+	#m = clearBitsAfter(m, off, 2*N)
+
+	#count the 1s of the cleared bit
+	count = countSetBits(clearBitsAfter(m, off, 2*N))
+	"""
+
+	return -(2 * (count%2)-1)
 
 # ELECTRON OPERATORS ###########################################################
 
@@ -222,9 +238,6 @@ def crcranan(i, j, m, N):
 
 	offi = 2*(N-i)-1	#offset of the bits representing the i-th and j-th energy levels, not accounting for spin
 	offj = 2*(N-j)-1
-
-	if offi>2*N or offj>2*N:
-		print("WARNING: the offset is too large!")
 
 	#at each step, the if statement gets TRUE if the operation is valid (does not destroy the state)
 	m1 = flipBit(m, offj-0)
@@ -311,9 +324,9 @@ def spinSpsm(i, j, m, N):
 		prefactor = 1
 		m2 = flipBit(m1, 2*(N-j)-1)	#c_jUP operator
 		if m2<m1:
-			prefactor *= prefactor_offset(m1, 2*(N-j)-1, N)
 			m3 = flipBit(m2, 2*(N-i)-1-1)	#c_iDOWN^dag
 			if m3>m2:
+				prefactor *= prefactor_offset(m1, 2*(N-j)-1, N)
 				prefactor *= prefactor_offset(m2, 2*(N-i)-1-1, N)
 
 				return prefactor, m3		
@@ -331,9 +344,9 @@ def spinSmsp(i, j, m, N):
 		prefactor = 1
 		m2 = flipBit(m1, 2*(N-j)-1-1)	#C_jDOWN operator
 		if m2<m1:
-			prefactor *= prefactor_offset(m1, 2*(N-j)-1-1, N)
 			m3 = flipBit(m2, 2*(N-i)-1)	#c_iUP operator
 			if m3>m2:
+				prefactor *= prefactor_offset(m1, 2*(N-j)-1-1, N)
 				prefactor *= prefactor_offset(m2, 2*(N-i)-1, N)
 
 				return prefactor, m3				
@@ -375,7 +388,7 @@ def SzszDown(i, j, m, N):
 			
 			return prefactor, m22
 	return 0, 0
-	
+
 @jit
 def spinInteractionOnState(i, j, state, N, basisList, lengthOfBasis):
 	"""
@@ -393,40 +406,31 @@ def spinInteractionOnState(i, j, state, N, basisList, lengthOfBasis):
 			if m1!=0:
 				#Check crcrananOnState() for comments
 				new_state[np.searchsorted(basisList, m1)] += 0.5 * coef * prefactor1 
-				
-				if basisList[np.searchsorted(basisList, m1)] != m1:
-					print("NOT IN basisList!")
 
 			#S- s+	
 			prefactor2, m2 = spinSmsp(i, j, basisList[k], N)	
 			if m2!=0:
 				#Check crcrananOnState() for comments
-				new_state[np.searchsorted(basisList, m2)] += 0.5 * coef * prefactor2
-				
-				if basisList[np.searchsorted(basisList, m2)] != m2:
-					print("NOT IN basisList!")			
+				new_state[np.searchsorted(basisList, m2)] += 0.5 * coef * prefactor2		
 
 			#Sz sz			
 			impSCoef = -2*impSz(basisList[k], N) + 1	#gives 1 for Sz=0 (UP) and -1 for Sz=1 (DOWN)
 			prefactor3, m3 = SzszUp(i, j, basisList[k], N)
 			if m3 != 0:
 				new_state[np.searchsorted(basisList, m3)] += 0.5 * impSCoef * 0.5 * coef * prefactor3  
-				
-				if basisList[np.searchsorted(basisList, m3)] != m3:
-					print("NOT IN basisList!")
+
 			
 			prefactor4, m4 = SzszDown(i, j, basisList[k], N)
 			if m4 != 0:	
 				new_state[np.searchsorted(basisList, m4)] += -0.5 * impSCoef * 0.5 * coef * prefactor4 
-				
-				if basisList[np.searchsorted(basisList, m4)] != m4:
-					print("NOT IN basisList!")
+
 
 	return new_state		
 
 # HAMILTONIAN ##################################################################
 
 #@jit
+#@profile	
 def HonState(d, alpha, J, state, N, basisList, lengthOfBasis):
 	"""
 	Calculates the action of the Hamiltonian to a given state.
@@ -486,7 +490,8 @@ def eps(i, d, N):
 	Dispersion; the spacing between levels is d. This is used to compute the energy for the singly occupied levels.
 	"""
 
-	return d*(i - ((N-1)/2))
+	#return d*(i - ((N-1)/2))
+	return -0.75 + 0.5*(i)*d
 
 # DIAGONALISATION ##############################################################
 
@@ -779,7 +784,7 @@ def findSector(basisList, N):
 	return n, nwimpUP, nwimpDOWN		
 
 # CALCULATION ##################################################################
-states_print = 0
+states_print = 1
 spectrum_J_plot = 0
 spectrum_alpha_plot = 0
 spectral_transition_ofJ_plot = 0
@@ -791,10 +796,9 @@ parity_gap_even_plot = 0
 if states_print:
 
 	N=4
-	n=N
+	n=4
 	d, alpha = 1, 0
-	J = N * 0.1
-	NNN = 20
+	J = 0
 
 	val, vec, bas = LanczosDiag_states(N, n, d, alpha, J, NofValues=4)
 	
@@ -928,23 +932,24 @@ if spectrum_alpha_plot:
 				plt.show()
 
 if spectral_transition_ofJ_plot:
-	save=1
+	save=0
 
 	print("N, dDelta")
-	for N in [6, 7]:
+	for N in [5]:
 		print()
 		
 		n = N
 		d = 1 
 		
-		for dDelta in [0.1, 1, 10]:	
+		for dDelta in [0.3]:	
 			alpha = setAlpha(N, d, dDelta)
-			
+			alpha = 0
 			print(N, dDelta)
 
-			Jmin, Jmax = 0*d, 10*d
+			Jmin, Jmax = 0*d, 5*d
 
 			Elist1, Elist2 = [], []
+			average = []
 			Jlist = np.linspace(Jmin, Jmax, 10)
 			for J in Jlist:
 
@@ -961,9 +966,10 @@ if spectral_transition_ofJ_plot:
 					parityGap = -1*(0.5*c + 0.5*e) 
 
 
+
 				Elist1.append(a/parityGap)	
 				Elist2.append(b/parityGap)	
-
+				average.append(((0.5*a) + (0.5*b))/parityGap)
 
 			Jlist = Jlist/d
 
@@ -971,6 +977,8 @@ if spectral_transition_ofJ_plot:
 			plt.scatter(Jlist, Elist1)
 			plt.plot(Jlist, Elist2, label=r"$n \rightarrow n-1$")
 			plt.scatter(Jlist, Elist2)
+			plt.plot(Jlist, average, linestyle="dashed")
+
 
 			plt.title(r"$N={0}$, $\alpha={1}$, $d/\Delta={2}$".format(N, alpha, dDelta))
 			plt.xlabel(r"$J/d$")
@@ -980,7 +988,9 @@ if spectral_transition_ofJ_plot:
 
 			plt.grid()
 			plt.tight_layout()
-				
+			
+			plt.ylim(-1.3, 1.3)
+
 			if save:
 				name = "TransitionE_N{0}_dDelta{1}.pdf".format(N, dDelta)
 				plt.savefig("Slike/"+name)
@@ -1037,15 +1047,15 @@ if spectral_transition_of_alpha_plot:
 if parity_gap_odd_plot:
 	saved=0
 
-	N = 9
+	N = 5
 	n = N
 
 	d, J = 1, 0
-	dDeltamin, dDeltamax = 0.1, 4
+	dDeltamin, dDeltamax = 0.1, 5
 
 	parityGapList = []
 
-	dDeltaList = np.linspace(dDeltamin, dDeltamax, 20)
+	dDeltaList = np.linspace(dDeltamin, dDeltamax, 5)
 	for dDelta in dDeltaList:
 
 		Delta = d/dDelta
@@ -1088,12 +1098,12 @@ if parity_gap_even_plot:
 	save=0
 
 	N = 6
-	for N in [4, 6, 8, 10]:
+	for N in [8]:
 		n = N
 		print()
 		print(N)
 		d, J = 1, 0
-		dDeltamin, dDeltamax = 0.1, 4
+		dDeltamin, dDeltamax = 0.3, 8
 
 		parityGapList = []
 
@@ -1112,8 +1122,7 @@ if parity_gap_even_plot:
 
 			parityGap = 0.5*a + 0.5*b 
 			parityGapList.append(parityGap/Delta)	
-		
-		
+				
 
 		#plt.plot(dDeltaList, parityGapList)
 		plt.scatter(dDeltaList, parityGapList, label=r"$N={0}$".format(N))
@@ -1127,6 +1136,9 @@ if parity_gap_even_plot:
 
 	plt.grid()
 	plt.tight_layout()
+
+	plt.xlim(0, 8)
+	plt.ylim(0, 6)
 
 	if save:
 		name = "ParityGap_even.pdf"
