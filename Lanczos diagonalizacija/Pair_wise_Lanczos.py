@@ -24,6 +24,10 @@ For given N and n, we do the following:
 NUMBA
 Mostly works fine, except in the basis definition part. I think it dislikes the numpy function for the binomial symbol (np.comb()). Solving this might provide a SLIGHT speed-up. The basis
 is not created many times, the main bottleneck is the application of the hamiltonian to the state, which works fine with jit().
+
+POSSIBLE PROBLEM
+The getEigenstates() function, which is used to calculate the eigenstates of the system skips over the case of npair=0. This might cause problems if such state (with each electron in a
+seperate level) would be one of the low laying eigenstates. It is probably not, except (probably) in the limit of d->0 and alpha*d >> D, which is not physical anyway.
 """
 	
 ################################################################################
