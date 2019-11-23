@@ -43,12 +43,12 @@ from numba import jit
 # PHYSICS ######################################################################
 
 @jit
-def eps(i, d, N):
+def eps(i, d, D):
 	"""
 	Dispersion; the spacing between levels is d. This is used to compute the energy for the singly occupied levels.
 	"""
 
-	return d*(i - ((N-1)/2))
+	return -D + d*i + d/2
 
 # UTILITY ######################################################################
 
@@ -109,7 +109,7 @@ def allSinglyOccupiedPossibilities(N, n, npair):
 
 	return resList		
 
-def pairLevelsDispersion(d, N, singlyOccupiedList):
+def pairLevelsDispersion(d, N, D, singlyOccupiedList):
 	"""
 	Given the list of the singly occupied levels, returns a list of lists of energies for levels available for pair interaction, and a list of lists of energies of singly occupied levels.
 	"""
@@ -119,9 +119,9 @@ def pairLevelsDispersion(d, N, singlyOccupiedList):
 	for j in range(len(singlyOccupiedList)):
 		for i in range(N):
 			if testBit(singlyOccupiedList[j], N-i-1)==0:
-				pairEnergies[j].append(eps(i, d, N))	
+				pairEnergies[j].append(eps(i, d, D))	
 			else:
-				singleEnergies[j].append(eps(i, d, N))
+				singleEnergies[j].append(eps(i, d, D))
 
 	pairEnergies = np.array([np.array(i) for i in pairEnergies])
 	singleEnergies = np.array([np.array(i) for i in singleEnergies])
@@ -307,7 +307,7 @@ def occupationByEigenstates(N, n, d, alpha, NofEgienstates=2):
 
 ################################################################################
 
-def getSpectrum(N, n, d, alpha, verbosity=False):
+def getSpectrum(D, N, n, d, alpha, verbosity=False):
 	"""
 	For a given number of levels N and number of particles n, returns the spectrum of eigenenergies.
 	INPUT:
@@ -319,51 +319,60 @@ def getSpectrum(N, n, d, alpha, verbosity=False):
 	spectrum - a list of eigenenergies of the Hamiltonian, sorted from smallest to biggest
 	"""
 	if verbosity:
-		print("N, n, d, alpha")
-		print(N, n, d, alpha)
+		print("D, N, n, d, alpha")
+		print(D, N, n, d, alpha)
 		print()
 
 	spectrum=[]
 
-	for npair in range(max(n-N, 0), (N//2)+1):
+	for npair in range(max(n-N, 0), min(n//2, N)+1):
 		#The case with zero pairs:
+
 		if npair==0:
-			spectrum.append(sum([eps(i, d, N) for i in range(N)]))
+			spectrum.append(sum([eps(i, d, D) for i in range(N)]))
 			continue
 
 		#Cases with more than zero pairs	
 		singlyOccupiedList = allSinglyOccupiedPossibilities(N, n, npair)
-		pairEnergies, singleEnergies = pairLevelsDispersion(d, N, singlyOccupiedList)
+		pairEnergies, singleEnergies = pairLevelsDispersion(d, N, D, singlyOccupiedList)
 		basisList, lengthOfBasis = defineBase(N, n, npair)
-	
+
 		for i in range(len(pairEnergies)):
 
-			LinOp = HLinOP(d, alpha, N, n, npair, basisList, lengthOfBasis, pairEnergies[i]) 
-			values = eigsh(LinOp, k=min(lengthOfBasis-1, 5), which="SA", return_eigenvectors=False)[::-1]
+			if lengthOfBasis == 1:
+				
+				values = np.array([pairEnergies[i, kk] for kk in range(len(pairEnergies[i]))])
+				values += sum(singleEnergies[i])
+				spectrum.extend(values)
+			
+			else:	
+				LinOp = HLinOP(d, alpha, N, n, npair, basisList, lengthOfBasis, pairEnergies[i]) 
+				values = eigsh(LinOp, k=min(lengthOfBasis-1, 5), which="SA", return_eigenvectors=False)[::-1]
 
-			values += sum(singleEnergies[i])
+				values += sum(singleEnergies[i])
 
-			spectrum.extend(values)
+				spectrum.extend(values)
 
 	return sorted(spectrum)
 
-def getEigenstates(N, n, d, alpha, NofEgienstates=2):
+def getEigenstates(D, N, n, d, alpha, NofEgienstates=2):
 	"""
 	Calculates the spectrum and its eigenstates. Returns orderes eigenstates, accompanied by a list of integers, which represent singly occupied levels of each eigenstate. 
 	"""
 	
 	spectrum=[]
 	CompleteListOfStates=[]
-	for npair in range(max(n-N, 0), (N//2)+1):
+	for npair in range(max(n-N, 0), min(n//2, N)+1):
 		#The case with zero pairs:
 		if npair==0:
 			#spectrum.append(sum([eps(i, d, N) for i in range(N)]))
+			#this step is skipped because this case has an empty basisList, so a base vector could not be written. 
 			continue
 
 		#Cases with more than zero pairs	
 		singlyOccupiedList = allSinglyOccupiedPossibilities(N, n, npair)
 
-		pairEnergies, singleEnergies = pairLevelsDispersion(d, N, singlyOccupiedList)
+		pairEnergies, singleEnergies = pairLevelsDispersion(d, N, D, singlyOccupiedList)
 		basisList, lengthOfBasis = defineBase(N, n, npair)
 	
 		for i in range(len(pairEnergies)):
@@ -401,9 +410,15 @@ eigenstates_of_alpha_plot = 0
 if 1:
 	print("START")
 	N = 4
-	d, alpha = 1, 0
-	a = getSpectrum(N, N, d, alpha)
+	n = 3
+	D = 1
+	d = 2*D/N
+	alpha = 0
+	
+	a = getSpectrum(D, N, n, d, alpha)
+
 	print(a)
+
 	print("DONE")
 
 
@@ -441,7 +456,6 @@ if spectroscopic_gap_plot:
 	plt.legend()
 	plt.grid()
 	plt.show()	
-
 
 if eigenstates_plot:
 

@@ -28,6 +28,9 @@ not work with jit.
 """
 
 ################################################################################
+print("The function LanczosDiag() is actually not called anywhere. Every calculation has the same three lines copy pasted.") 
+print("This script is kind of useless (== works much slower than the one with pairs with no advantages) anyway.")
+################################################################################
 
 import numpy as np 
 import scipy
@@ -178,7 +181,7 @@ def CountingOpOnState(i, s, state, N, basisList, lengthOfBasis):
 # HAMILTONIAN ##################################################################
 
 #@jit
-def HonState(d, alpha, state, N, basisList, lengthOfBasis):
+def HonState(d, alpha, state, N, D, basisList, lengthOfBasis):
 	"""
 	Calculates the action of the Hamiltonian to a given state.
 	INPUT:
@@ -193,7 +196,7 @@ def HonState(d, alpha, state, N, basisList, lengthOfBasis):
 	kinetic, interaction = 0, 0
 
 	for i in range(N):
-		kinetic += eps(i, d, N) * (CountingOpOnState(i, 0, state, N, basisList, lengthOfBasis) + CountingOpOnState(i, 1, state, N, basisList, lengthOfBasis)) 
+		kinetic += eps(i, d, D) * (CountingOpOnState(i, 0, state, N, basisList, lengthOfBasis) + CountingOpOnState(i, 1, state, N, basisList, lengthOfBasis)) 
 		
 		for j in range(N):
 			interaction += crcrananOnState(i, j, state, N, basisList, lengthOfBasis)
@@ -204,21 +207,22 @@ class HLinOP(LinearOperator):
 	"""
 	This is a class, built-in in scipy, which allows for a representation of a given function as a linear operator. The method _matvec() defines how it acts on a vector.
 	"""	
-	def __init__(self, d, alpha, N, basisList, lengthOfBasis, dtype='float64'):
+	def __init__(self, d, alpha, N, D, basisList, lengthOfBasis, dtype='float64'):
 		self.shape = (lengthOfBasis, lengthOfBasis)
 		self.dtype = np.dtype(dtype)
 		self.d = d
 		self.alpha = alpha
 		self.N = N
+		self.D = D
 		self.basisList = basisList
 		self.lengthOfBasis = lengthOfBasis
 
 	def _matvec(self, state):
-		return HonState(self.d, self.alpha, state, self.N, self.basisList, self.lengthOfBasis)
+		return HonState(self.d, self.alpha, state, self.N, self.D, self.basisList, self.lengthOfBasis)
 
 # DIAGONALISATION ##############################################################
 
-def exactDiag(d, alpha, N, basisList, lengthOfBasis):
+def exactDiag(d, alpha, N, D, basisList, lengthOfBasis):
 	"""Diagonalises the hamiltonian using exact diagonalisation."""
 
 	matrika1=[]
@@ -232,7 +236,7 @@ def exactDiag(d, alpha, N, basisList, lengthOfBasis):
 			stanje2 = np.zeros(lengthOfBasis)
 			stanje2[j] = 1
 
-			vrstica.append(np.dot(stanje2, HonState(d, alpha, stanje1, N, basisList, lengthOfBasis)))
+			vrstica.append(np.dot(stanje2, HonState(d, alpha, stanje1, N, D, basisList, lengthOfBasis)))
 			
 
 		matrika1.append(vrstica)	
@@ -256,22 +260,22 @@ def findGap(values, precision=1e-16):
 # PHYSICS ######################################################################
 
 @jit
-def eps(i, d, N):
+def eps(i, d, D):
 	"""
 	Dispersion; the spacing between levels is d. This is used to compute the energy for the singly occupied levels.
 	"""
 
-	return d*(i - ((N-1)/2))
+	return -D + d*i + d/2
 
 ################################################################################
 
-def LanczosDiag(N, n, d, alpha):
+def LanczosDiag(D, N, n, d, alpha):
 	"""
 	For a given number of levels N, and given number of particles n, return the eigenenergies of the Hamiltonian.
 	"""
 
 	lengthOfBasis, basisList = makeBase(N, n)
-	LinOp = HLinOP(d, alpha, N, basisList, lengthOfBasis) 
+	LinOp = HLinOP(d, alpha, N, D, basisList, lengthOfBasis) 
 	values = eigsh(LinOp, k=4, which="SA", return_eigenvectors=False)[::-1]
 
 	return values
@@ -287,7 +291,6 @@ spectroscopic_gap_plot=0
 ################################################################################
 
 if profiling:
-	import cProfile
 
 	def runDiag(N, n, d, alpha):
 		
