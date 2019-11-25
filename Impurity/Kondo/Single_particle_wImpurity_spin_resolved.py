@@ -88,7 +88,6 @@ def setAlpha(N, d, dDelta):
 	Delta = d/dDelta
 	return 1/(np.arcsinh(omegaD/(Delta)))
 
-
 # BASIS ########################################################################
 
 @jit
@@ -431,7 +430,7 @@ def spinInteractionOnState(i, j, state, N, basisList, lengthOfBasis):
 
 #@jit
 #@profile	
-def HonState(d, alpha, J, state, N, basisList, lengthOfBasis):
+def HonState(d, alpha, J, state, N, D, basisList, lengthOfBasis):
 	"""
 	Calculates the action of the Hamiltonian to a given state.
 	INPUT:
@@ -452,7 +451,7 @@ def HonState(d, alpha, J, state, N, basisList, lengthOfBasis):
 		niDOWN = CountingOpOnState(i, 1, state, N, basisList, lengthOfBasis)
 
 		#kinetic term
-		kinetic += eps(i, d, N) * (niUP + niDOWN)
+		kinetic += eps(i, d, D) * (niUP + niDOWN)
 		
 		for j in range(N):
 			if d*alpha!=0:
@@ -469,33 +468,34 @@ class HLinOP(LinearOperator):
 	This is a class, built-in to scipy, which allows for a representation of a given function as a linear operator. The method _matvec() defines how it acts on a vector.
 	The operator can be diagonalised using the function scipy.sparse.linalg.eigsh().
 	"""	
-	def __init__(self, d, alpha, J, N, basisList, lengthOfBasis, dtype='float64'):
+	def __init__(self, d, alpha, J, N, D, basisList, lengthOfBasis, dtype='float64'):
 		self.shape = (lengthOfBasis, lengthOfBasis)
 		self.dtype = np.dtype(dtype)
 		self.d = d
 		self.alpha = alpha
 		self.J = J
 		self.N = N
+		self.D = D
 		self.basisList = basisList
 		self.lengthOfBasis = lengthOfBasis
 
 	def _matvec(self, state):
-		return HonState(self.d, self.alpha, self.J, state, self.N, self.basisList, self.lengthOfBasis)
+		return HonState(self.d, self.alpha, self.J, state, self.N, self.D, self.basisList, self.lengthOfBasis)
 
 # PHYSICS ######################################################################
 
 @jit
-def eps(i, d, N):
+def eps(i, d, D):
 	"""
 	Dispersion; the spacing between levels is d. This is used to compute the energy for the singly occupied levels.
 	"""
 
 	#return d*(i - ((N-1)/2))
-	return -0.75 + 0.5*(i)*d
+	return -D + d*i + d/2
 
 # DIAGONALISATION ##############################################################
 
-def LanczosDiag_nUPnDOWN(N, n, nwimpUP, nwimpDOWN, d, alpha, J, NofValues=4, verbosity=False):
+def LanczosDiag_nUPnDOWN(D, N, n, nwimpUP, nwimpDOWN, d, alpha, J, NofValues=4, verbosity=False):
 	"""
 	Returns the spectrum of the Hamiltonian in the subspace, defined by
 	N - number of levels
@@ -514,12 +514,12 @@ def LanczosDiag_nUPnDOWN(N, n, nwimpUP, nwimpDOWN, d, alpha, J, NofValues=4, ver
 		values = np.dot(basisList[0], Hs)
 
 	else:	
-		LinOp = HLinOP(d, alpha, J, N, basisList, lengthOfBasis) 
+		LinOp = HLinOP(d, alpha, J, N, D, basisList, lengthOfBasis) 
 		values = eigsh(LinOp, k=min(lengthOfBasis-1, NofValues), which="SA", return_eigenvectors=False)[::-1]
 
 	return values
 
-def LanczosDiagStates_nUPnDOWN(N, n, nwimpUP, nwimpDOWN, d, alpha, J, NofValues=4, verbosity=False):
+def LanczosDiagStates_nUPnDOWN(D, N, n, nwimpUP, nwimpDOWN, d, alpha, J, NofValues=4, verbosity=False):
 	"""
 	Returns the spectrum of the Hamiltonian in the subspace, defined by
 	N - number of levels
@@ -534,17 +534,17 @@ def LanczosDiagStates_nUPnDOWN(N, n, nwimpUP, nwimpDOWN, d, alpha, J, NofValues=
 		checkParams(N, n, nwimpUP, nwimpDOWN)
 
 	if lengthOfBasis==1:
-		Hs = HonState(d, alpha, J, np.array([1]), N, basisList, lengthOfBasis)
+		Hs = HonState(d, alpha, J, np.array([1]), N, D, basisList, lengthOfBasis)
 		values = np.dot(basisList[0], Hs)
 		vectors = [np.array([1])]
 
 	else:	
-		LinOp = HLinOP(d, alpha, J, N, basisList, lengthOfBasis) 
+		LinOp = HLinOP(d, alpha, J, N, D, basisList, lengthOfBasis) 
 		values, vectors = eigsh(LinOp, k=min(lengthOfBasis-1, NofValues), which="SA")
 
 	return values, vectors, basisList
 
-def LanczosDiag(N, n, d, alpha, J, NofValues=4, verbosity=False):
+def LanczosDiag(D, N, n, d, alpha, J, NofValues=4, verbosity=False):
 	"""
 	For a given number of levels N, and given number of particles n, return the eigenenergies of the Hamiltonian.
 	Computed as a combination of eigenenergies from all smallest subspace with set number of particles (n) and 
@@ -560,11 +560,11 @@ def LanczosDiag(N, n, d, alpha, J, NofValues=4, verbosity=False):
 		if verbosity:
 			print(nwimpUP, nwimpDOWN)
 
-		val.extend(LanczosDiag_nUPnDOWN(N, n, nwimpUP, nwimpDOWN, d, alpha, J, NofValues=NofValues, verbosity=verbosity))
+		val.extend(LanczosDiag_nUPnDOWN(D, N, n, nwimpUP, nwimpDOWN, d, alpha, J, NofValues=NofValues, verbosity=verbosity))
 
 	return np.sort(val)	
 
-def LanczosDiag_states(N, n, d, alpha, J, NofValues=4, verbosity=False):
+def LanczosDiag_states(D, N, n, d, alpha, J, NofValues=4, verbosity=False):
 	"""
 	For a given number of levels N, and given number of particles n, return the eigenenergies and eigenstates of the Hamiltonian.
 	Eigenvectors are already transposed, so SortedVectors[i] corresponds to the eigenstate with energy SortedValues[i], with the
@@ -580,7 +580,7 @@ def LanczosDiag_states(N, n, d, alpha, J, NofValues=4, verbosity=False):
 		if verbosity:
 			print(nwimpUP, nwimpDOWN)
 
-		val, vec, basisList = LanczosDiagStates_nUPnDOWN(N, n, nwimpUP, nwimpDOWN, d, alpha, J, NofValues=4, verbosity=verbosity)
+		val, vec, basisList = LanczosDiagStates_nUPnDOWN(D, N, n, nwimpUP, nwimpDOWN, d, alpha, J, NofValues=4, verbosity=verbosity)
 
 		values.extend(val)
 		vectors.extend(np.transpose(vec))
@@ -600,7 +600,7 @@ def LanczosDiag_states(N, n, d, alpha, J, NofValues=4, verbosity=False):
 
 # TRANSITION ENERGY ############################################################
 
-def addElectron(N, n, d, alpha, J, add=1):
+def addElectron(D, N, n, d, alpha, J, add=1):
 	"""
 	Calculates the energy of transition (= difference of ground state energies) between ground states of 
 	the subspace with n and n+add particles.
@@ -608,7 +608,7 @@ def addElectron(N, n, d, alpha, J, add=1):
 
 	#FIND THE GS FOR THE INITIAL STATE
 	#initVal = LanczosDiag(N, n, d, alpha, J, NofValues=4)[0]	#this is the ground state of the initial system	
-	initVal, b1, c1 = LanczosDiag_states(N, n, d, alpha, J, NofValues=4)
+	initVal, b1, c1 = LanczosDiag_states(D, N, n, d, alpha, J, NofValues=4)
 	initVal = initVal[0]
 
 	#ADD ELECTRONS
@@ -616,12 +616,12 @@ def addElectron(N, n, d, alpha, J, add=1):
 
 	#FIND THE GS FOR THE FINAL STATE
 	#finalVal = LanczosDiag(N, n, d, alpha, J, NofValues=4)[0]	#this is the ground state of the final system	
-	finalVal, b2, c2 = LanczosDiag_states(N, n, d, alpha, J, NofValues=4)
+	finalVal, b2, c2 = LanczosDiag_states(D, N, n, d, alpha, J, NofValues=4)
 	finalVal = finalVal[0]
 
 	return finalVal - initVal
 
-def addElectronDefindedFinalSpin(N, n, spin, d, alpha, J, add=1):
+def addElectronDefindedFinalSpin(D, N, n, spin, d, alpha, J, add=1):
 	"""
 	Calculates the energy of transition (= difference of ground state energies) between ground states of 
 	the subspace (n, any Sz) and the subspace (n=n+1, Sz=Sz'+1); where Sz' is spin of the computed GS 
@@ -634,7 +634,7 @@ def addElectronDefindedFinalSpin(N, n, spin, d, alpha, J, add=1):
 	print("GS JE LAHKO DEGENERIRANO, PREVERI KAJ TAKRAT!")
 
 	#FIND THE GS FOR THE INITIAL STATE
-	a, b, c = LanczosDiag_states(N, n, d, alpha, J, NofValues=4, verbosity=False)
+	a, b, c = LanczosDiag_states(D, N, n, d, alpha, J, NofValues=4, verbosity=False)
 	initVal, initVec, initBasisList = a[0], b[0], c[0]		#this is the ground state of the initial system
 
 	print("INIT")
@@ -650,7 +650,7 @@ def addElectronDefindedFinalSpin(N, n, spin, d, alpha, J, add=1):
 		nwimpUP = nwimpUP + 1*add
 		n = n + 1*add
 		#FIND THE STATE AFTER TRANSITION
-		a, b, c = LanczosDiagStates_nUPnDOWN(N, n, nwimpUP, nwimpDOWN, d, alpha, J, NofValues=4, verbosity=False)
+		a, b, c = LanczosDiagStates_nUPnDOWN(D, N, n, nwimpUP, nwimpDOWN, d, alpha, J, NofValues=4, verbosity=False)
 		finalVal, finalVec, finalBasisList = a[0], b[:, 0], c
 
 	elif spin == "down":
@@ -658,7 +658,7 @@ def addElectronDefindedFinalSpin(N, n, spin, d, alpha, J, add=1):
 		nwimpDOWN = nwimpDOWN + 1*add
 		n = n + 1*add
 		#FIND THE STATE AFTER TRANSITION
-		a, b, c = LanczosDiagStates_nUPnDOWN(N, n, nwimpUP, nwimpDOWN, d, alpha, J, NofValues=4, verbosity=False)
+		a, b, c = LanczosDiagStates_nUPnDOWN(D, N, n, nwimpUP, nwimpDOWN, d, alpha, J, NofValues=4, verbosity=False)
 		finalVal, finalVec, finalBasisList = a[0], b[:, 0], c
 
 	print("FINAL")
@@ -672,7 +672,7 @@ def addElectronDefindedFinalSpin(N, n, spin, d, alpha, J, add=1):
 
 	return finalVal - initVal, finalVal, initVal	
 
-def addElectronDefinedInitialFinalSpin(N, n, nwimpUP, nwimpDOWN, spin, d, alpha, J, add=1):
+def addElectronDefinedInitialFinalSpin(D, N, n, nwimpUP, nwimpDOWN, spin, d, alpha, J, add=1):
 	"""
 	Calculates the energy of transition (= difference of ground state energies) between ground states of 
 	the subspace (n, Sz) and the subspace (n=n+1, Sz=Sz+1).
@@ -684,7 +684,7 @@ def addElectronDefinedInitialFinalSpin(N, n, nwimpUP, nwimpDOWN, spin, d, alpha,
 	print("GS JE LAHKO DEGENERIRANO, PREVERI KAJ TAKRAT!")
 
 	#FIND THE GS FOR THE INITIAL STATE
-	a, b, c = LanczosDiagStates_nUPnDOWN(N, n, nwimpUP, nwimpDOWN, d, alpha, J, NofValues=4, verbosity=False)
+	a, b, c = LanczosDiagStates_nUPnDOWN(D, N, n, nwimpUP, nwimpDOWN, d, alpha, J, NofValues=4, verbosity=False)
 	initVal, initVec, initBasisList = a[0], b[0], c 			#this is the ground state of the initial system
 
 
@@ -693,7 +693,7 @@ def addElectronDefinedInitialFinalSpin(N, n, nwimpUP, nwimpDOWN, spin, d, alpha,
 		nwimpUP = nwimpUP + 1*add
 		n = n + 1*add
 		#FIND THE STATE AFTER TRANSITION
-		a, b, c = LanczosDiagStates_nUPnDOWN(N, n, nwimpUP, nwimpDOWN, d, alpha, J, NofValues=4, verbosity=False)
+		a, b, c = LanczosDiagStates_nUPnDOWN(D, N, n, nwimpUP, nwimpDOWN, d, alpha, J, NofValues=4, verbosity=False)
 		finalVal, finalVec, finalBasisList = a[0], b[:, 0], c
 
 	elif spin == "down":
@@ -701,7 +701,7 @@ def addElectronDefinedInitialFinalSpin(N, n, nwimpUP, nwimpDOWN, spin, d, alpha,
 		nwimpDOWN = nwimpDOWN + 1*add
 		n = n + 1*add
 		#FIND THE STATE AFTER TRANSITION
-		a, b, c = LanczosDiagStates_nUPnDOWN(N, n, nwimpUP, nwimpDOWN, d, alpha, J, NofValues=4, verbosity=False)
+		a, b, c = LanczosDiagStates_nUPnDOWN(D, N, n, nwimpUP, nwimpDOWN, d, alpha, J, NofValues=4, verbosity=False)
 		finalVal, finalVec, finalBasisList = a[0], b[:, 0], c	
 
 	print("FINAL:")
@@ -795,12 +795,14 @@ parity_gap_even_plot = 0
 
 if states_print:
 
+	D=1
 	N=4
-	n=4
-	d, alpha = 1, 0
+	n=3
+	d = 2*D/N
+	alpha = 1
 	J = 0
 
-	val, vec, bas = LanczosDiag_states(N, n, d, alpha, J, NofValues=4)
+	val, vec, bas = LanczosDiag_states(D, N, n, d, alpha, J, NofValues=np.infty)
 	
 	#val, vec = exactDiag(N, n, d, alpha, J)
 

@@ -115,7 +115,7 @@ def allSinglyOccupiedPossibilities(N, n, npair):
 
 def pairLevelsDispersion(d, N, D, singlyOccupiedList):
 	"""
-	Given the list of the singly occupied levels, returns a list of lists of energies for levels available for pair interaction, and a list of lists of energies of singly occupied levels.
+	Given the list of lists of the singly occupied levels, returns a list of lists of energies for levels available for pair interaction, and a list of lists of energies of singly occupied levels.
 	"""
 
 	pairEnergies, singleEnergies = [[] for i in singlyOccupiedList], [[] for i in singlyOccupiedList]
@@ -341,6 +341,7 @@ def getSpectrum(D, N, n, d, alpha, verbosity=False):
 		pairEnergies, singleEnergies = pairLevelsDispersion(d, N, D, singlyOccupiedList)
 		basisList, lengthOfBasis = defineBase(N, n, npair)
 
+
 		for i in range(len(pairEnergies)):
 
 			if lengthOfBasis == 1:
@@ -367,6 +368,8 @@ def getEigenstates(D, N, n, d, alpha, NofEgienstates=2):
 	spectrum=[]
 	CompleteListOfStates=[]
 	for npair in range(max(n-N, 0), min(n//2, N)+1):
+		print()
+		print(npair)
 		#The case with zero pairs:
 		if npair==0:
 			#spectrum.append(sum([eps(i, d, N) for i in range(N)]))
@@ -381,27 +384,52 @@ def getEigenstates(D, N, n, d, alpha, NofEgienstates=2):
 	
 		for i in range(len(pairEnergies)):
 
-			LinOp = HLinOP(d, alpha, N, n, npair, basisList, lengthOfBasis, pairEnergies[i]) 
-			values, vectors = eigsh(LinOp, k=min(lengthOfBasis-1, 5), which="SA")
+			if lengthOfBasis == 1:
 
-			values += sum(singleEnergies[i])
+				values = np.array([pairEnergies[i, kk] for kk in range(len(pairEnergies[i]))])
+				values += sum(singleEnergies[i])
+				spectrum.extend(values)
+				
+				CompleteListOfStates.append([np.array([1]), basisList, singlyOccupiedList[i]])
 
-			spectrum.extend(values)
-			#eigenvectors.extend(vectors)
+				for kkk in range(len(values)):
+					print(values[-kkk], CompleteListOfStates[-kkk])
 
-			for j in range(len(values)):
-				CompleteListOfStates.append([vectors[:, j], basisList, singlyOccupiedList[i]])
+			else:	
+				LinOp = HLinOP(d, alpha, N, n, npair, basisList, lengthOfBasis, pairEnergies[i]) 
+				values, vectors = eigsh(LinOp, k=min(lengthOfBasis-1, 5), which="SA")
 
+				values += sum(singleEnergies[i])
 
+				spectrum.extend(values)
+				#eigenvectors.extend(vectors)
+
+				for j in range(len(values)):
+					CompleteListOfStates.append([vectors[:, j], basisList, singlyOccupiedList[i]])
+
+				for kkk in range(len(values)):
+					print(values[-kkk], CompleteListOfStates[-kkk])	
+
+					
 	#find the indexes which sort the array:
 	sortedIndeces = np.argsort(spectrum)
 	#create a list of eigenvectors and a list of singly occupied states in the sorted order 
 	CompleteListOfStatesOrdered=[]
 	spectrumOrdered=[]
-	for i in range(NofEgienstates):
+	for i in range(len(spectrum)):
 		CompleteListOfStatesOrdered.append(CompleteListOfStates[sortedIndeces[i]])
 
 		spectrumOrdered.append(spectrum[sortedIndeces[i]])
+	
+
+	print()
+	print()	
+
+	for i in range(len(spectrum)):	
+		print(spectrumOrdered[i], CompleteListOfStatesOrdered[i])
+
+	print()
+	print()	
 
 	return CompleteListOfStatesOrdered, spectrumOrdered 
 
@@ -411,20 +439,67 @@ eigenstates_plot = 0
 eigenstates_of_alpha_plot = 0
 ################################################################################
 
+if 0:
+	print("START")
+	N = 4
+	n = N
+	D = 1
+	d = 2*D/N
+	alpha = 1
+	
+	
+	a = getSpectrum(D, N, n, d, alpha)
+
+	print(a[:10])
+
+	print("DONE")
+
 if 1:
 	print("START")
 	N = 4
-	n = 3
+	n = N
 	D = 1
 	d = 2*D/N
 	alpha = 0
 	
-	a = getSpectrum(D, N, n, d, alpha)
+	
+	vec, val = getEigenstates(D, N, n, d, alpha, NofEgienstates=10)
 
-	print(a)
+	a = [vec[i][0] for i in range(min(len(vec), 10))]
 
-	print("DONE")
+	print(val)
 
+	#print(vec)
+	print()
+
+	for i in range(len(val)):
+
+
+		npair = (n - countSetBits(vec[i][2]))//2
+		basisList = vec[i][1]
+		lengthOfBasis = len(basisList)
+		pairEnergies, singleEnergies = pairLevelsDispersion(d, N, D, np.array([vec[i][2]]))
+
+		pairEnergies = pairEnergies[0]
+		state = np.array(vec[i][0])
+
+		Hs = HonState(state, d, alpha, N, n, npair, basisList, lengthOfBasis, pairEnergies)
+
+		#print(val[i]*state - Hs)
+		
+	
+		degenerate=0
+		if i<len(val)-1 and i>0:
+			if np.abs(val[i]-val[i+1])<1e-5 or np.abs(val[i]-val[i-1])<1e-5:
+				degenerate=1
+		
+		print()
+		#print(state)	
+		#print(val[i]*state)
+		#print(Hs)
+		print(val[i], norm(val[i]*state - Hs), npair, degenerate)
+
+	print("DONE")	
 
 if spectroscopic_gap_plot:
 

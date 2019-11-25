@@ -30,6 +30,7 @@ not work with jit.
 ################################################################################
 print("The function LanczosDiag() is actually not called anywhere. Every calculation has the same three lines copy pasted.") 
 print("This script is kind of useless (== works much slower than the one with pairs with no advantages) anyway.")
+print()
 ################################################################################
 
 import numpy as np 
@@ -276,13 +277,24 @@ def LanczosDiag(D, N, n, d, alpha):
 
 	lengthOfBasis, basisList = makeBase(N, n)
 	LinOp = HLinOP(d, alpha, N, D, basisList, lengthOfBasis) 
-	values = eigsh(LinOp, k=4, which="SA", return_eigenvectors=False)[::-1]
+	values = eigsh(LinOp, k=20, which="SA", return_eigenvectors=False)[::-1]
 
 	return values
 
+
+def LanczosDiagStates(D, N, n, d, alpha):
+	"""
+	For a given number of levels N, and given number of particles n, return the eigenenergies of the Hamiltonian.
+	"""
+
+	lengthOfBasis, basisList = makeBase(N, n)
+	LinOp = HLinOP(d, alpha, N, D, basisList, lengthOfBasis) 
+	val, vec = eigsh(LinOp, k=20, which="SA")
+
+	return val, vec
+
 # CALCULATION ##################################################################
 
-profiling=0
 time_test=0
 GS_comparison_plot=0
 parity_gap_plot=0
@@ -290,20 +302,47 @@ spectroscopic_gap_plot=0
 
 ################################################################################
 
-if profiling:
+if 0:
+	D, N = 1, 4
+	n = 5
+	d = 2*D/N
+	alpha = 1
 
-	def runDiag(N, n, d, alpha):
+
+	val = LanczosDiag(D, N, n, d, alpha)
+
+	print(val)
+
+if 1:
+	D = 1
+	N = 8
+	n = N
+	d = 2*D/N
+	alpha = 1
+
+	lengthOfBasis, basisList = makeBase(N, n)
+
+	val, vectors = LanczosDiagStates(D, N, n, d, alpha)
+	#vec = vec.transpose()
+
+	print(val)
+	for i in range(len(val)):
+
+		vec = vectors[:, i]
+
+		degenerate=0
+		if i<len(val)-1 and i>0:
+			if np.abs(val[i]-val[i+1])<1e-5 or np.abs(val[i]-val[i-1])<1e-5:
+				degenerate=1
 		
-		lengthOfBasis, basisList = makeBase(N, n)
+		a = np.multiply(val[i],vec)
+		Hs = HonState(d, alpha, vec, N, D, basisList, lengthOfBasis)
 
-		LinOp = HLinOP(d, alpha, N, basisList, lengthOfBasis) 
-		values = eigsh(LinOp, k=4, which="SA", return_eigenvectors=False)[::-1]
-	
-		return values
+		print(norm(Hs - a), degenerate)
 
-	a = runDiag(5, 5, 1, 1)
 
-	#cProfile.run("runDiag()")
+
+
 
 if time_test:
 
