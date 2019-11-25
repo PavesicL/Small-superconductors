@@ -252,6 +252,7 @@ def HonState(state, d, alpha, N, n, npair, basisList, lengthOfBasis, pairEnergie
 	kineticPair, interactionPair = 0, 0
 
 	for i in range(Npair):
+
 		kineticPair += 2 * pairEnergies[i] * countingOpOnState(i, state, Npair, basisList, lengthOfBasis)
 
 		for j in range(Npair):
@@ -285,7 +286,7 @@ def occupationByEigenstates(N, n, d, alpha, NofEgienstates=2):
 	Calcualtes the expected occupation number for each energy level, for first NofEigenstates eigenstates.
 	"""
 
-	CompleteListOfStatesOrdered, spectrumOrdered  = getEigenstates(N, n, d, alpha, NofEgienstates)
+	CompleteListOfStatesOrdered, spectrumOrdered  = getEigenstatesOLD(N, n, d, alpha, NofEgienstates)
 																#This is a list, where each element is a list of expected occupation numbers by energy level of an eigenstate. 
 	occupationOfLevelsByStates = np.zeros((NofEgienstates, N))	#Elements are ordered by the energy of the state; occupationOfLevelsByStates[0] for GS etc.	  
 	for i in range(NofEgienstates):
@@ -308,6 +309,35 @@ def occupationByEigenstates(N, n, d, alpha, NofEgienstates=2):
 						count+=1
 
 	return occupationOfLevelsByStates				
+
+def occupationNumberVector(D, N, n, d, alpha, NofEgienstates=2):
+	"""
+	Transforms the eigenvectors into a "human readable" form of the occupation number representation.
+	"""
+
+	CompleteListOfStatesOrdered, spectrumOrdered  = getEigenstatesOLD(D, N, n, d, alpha, NofEgienstates=NofEgienstates)
+																#This is a list, where each element is a list of expected occupation numbers by energy level of an eigenstate. 
+	occupationOfLevelsByStates = np.zeros((NofEgienstates, N))	#Elements are ordered by the energy of the state; occupationOfLevelsByStates[0] for GS etc.	  
+	for i in range(NofEgienstates):
+		state = CompleteListOfStatesOrdered[i][0]
+		basisList = CompleteListOfStatesOrdered[i][1]
+		singlyOcc = CompleteListOfStatesOrdered[i][2]
+
+		for j in range(len(basisList)):	#for each basis vector
+			count=0
+			for k in range(N):	#each energy level
+				
+				if testBit(singlyOcc, N-k-1)!=0:	#level is singly occupied
+					occupationOfLevelsByStates[i, k] += 0
+
+				else:	#level is not singly occupied	
+					if testBit(basisList[j], count)==0:	#level does not have a pair
+						count+=1
+					else:								#level has a pair
+						occupationOfLevelsByStates[i, k] += state[j]
+						count+=1
+
+	return spectrumOrdered, occupationOfLevelsByStates, CompleteListOfStatesOrdered	
 
 ################################################################################
 
@@ -360,21 +390,26 @@ def getSpectrum(D, N, n, d, alpha, verbosity=False):
 
 	return sorted(spectrum)
 
-def getEigenstates(D, N, n, d, alpha, NofEgienstates=2):
+def getEigenstatesOLD(D, N, n, d, alpha, NofEgienstates=2):
 	"""
 	Calculates the spectrum and its eigenstates. Returns orderes eigenstates, accompanied by a list of integers, which represent singly occupied levels of each eigenstate. 
+	Deprecated but needed for the occupation number pictures/functions.
 	"""
 	
 	spectrum=[]
 	CompleteListOfStates=[]
+	#FOR ALL POSSIBLE NUMBERS OF PAIRS
 	for npair in range(max(n-N, 0), min(n//2, N)+1):
 		print()
 		print(npair)
+
 		#The case with zero pairs:
 		if npair==0:
 			#spectrum.append(sum([eps(i, d, N) for i in range(N)]))
 			#this step is skipped because this case has an empty basisList, so a base vector could not be written. 
 			continue
+
+		#FIND ALL CONFIGURATIONS - POSITIONS OF DOUBLY AND SINGLY OCCUPIED LEVELS
 
 		#Cases with more than zero pairs	
 		singlyOccupiedList = allSinglyOccupiedPossibilities(N, n, npair)
@@ -382,8 +417,10 @@ def getEigenstates(D, N, n, d, alpha, NofEgienstates=2):
 		pairEnergies, singleEnergies = pairLevelsDispersion(d, N, D, singlyOccupiedList)
 		basisList, lengthOfBasis = defineBase(N, n, npair)
 	
+		#ITERATE OVER ALL CONFIGURATIONS
 		for i in range(len(pairEnergies)):
 
+			#IF THE CONFIGURATION HAS ONLY ONE POSSIBLE POSITION FOR PAIRS
 			if lengthOfBasis == 1:
 
 				values = np.array([pairEnergies[i, kk] for kk in range(len(pairEnergies[i]))])
@@ -395,7 +432,8 @@ def getEigenstates(D, N, n, d, alpha, NofEgienstates=2):
 				for kkk in range(len(values)):
 					print(values[-kkk], CompleteListOfStates[-kkk])
 
-			else:	
+			else:
+				print("AAA", i)	
 				LinOp = HLinOP(d, alpha, N, n, npair, basisList, lengthOfBasis, pairEnergies[i]) 
 				values, vectors = eigsh(LinOp, k=min(lengthOfBasis-1, 5), which="SA")
 
@@ -433,6 +471,78 @@ def getEigenstates(D, N, n, d, alpha, NofEgienstates=2):
 
 	return CompleteListOfStatesOrdered, spectrumOrdered 
 
+def getEigenstates(D, N, n, d, alpha, NofEgienstates=2):
+	"""
+	Calculates the spectrum and its eigenstates. Returns orderes eigenstates, accompanied by a list of integers, which represent singly occupied levels of each eigenstate. 
+	This function returns 
+	"""
+	
+	spectrum=[]
+	pairSpectrum=[]
+	CompleteListOfStates=[]
+	#FOR ALL POSSIBLE NUMBERS OF PAIRS
+	for npair in range(max(n-N, 0), min(n//2, N)+1):
+
+		#The case with zero pairs:
+		if npair==0:
+			#spectrum.append(sum([eps(i, d, N) for i in range(N)]))
+			#this step is skipped because this case has an empty basisList, so a base vector could not be written. 
+			continue
+
+		#FIND ALL CONFIGURATIONS - POSITIONS OF DOUBLY AND SINGLY OCCUPIED LEVELS
+
+		#Cases with more than zero pairs	
+		singlyOccupiedList = allSinglyOccupiedPossibilities(N, n, npair)
+
+		pairEnergies, singleEnergies = pairLevelsDispersion(d, N, D, singlyOccupiedList)
+		basisList, lengthOfBasis = defineBase(N, n, npair)
+	
+		#ITERATE OVER ALL CONFIGURATIONS
+		for i in range(len(pairEnergies)):
+
+			#IF THE CONFIGURATION HAS ONLY ONE POSSIBLE POSITION FOR PAIRS
+			if lengthOfBasis == 1:
+
+				values = np.array([pairEnergies[i, kk] for kk in range(len(pairEnergies[i]))])
+
+				pairSpectrum.extend(values)
+
+
+				values += sum(singleEnergies[i])
+				
+				spectrum.extend(values)
+				
+				CompleteListOfStates.append([np.array([1]), basisList, pairEnergies[i]])
+
+			else:
+				LinOp = HLinOP(d, alpha, N, n, npair, basisList, lengthOfBasis, pairEnergies[i]) 
+				values, vectors = eigsh(LinOp, k=min(lengthOfBasis-1, 5), which="SA")
+
+				pairSpectrum.extend(values)
+
+				values += sum(singleEnergies[i])
+
+				spectrum.extend(values)
+				#eigenvectors.extend(vectors)
+
+				for j in range(len(values)):
+					CompleteListOfStates.append([vectors[:, j], basisList, pairEnergies[i]])
+
+					
+	#find the indexes which sort the array:
+	sortedIndeces = np.argsort(spectrum)
+	#create a list of eigenvectors and a list of singly occupied states in the sorted order 
+	CompleteListOfStatesOrdered=[]
+	spectrumOrdered=[]
+	pairSpectrumOrdered=[]
+	for i in range(len(spectrum)):
+		CompleteListOfStatesOrdered.append(CompleteListOfStates[sortedIndeces[i]])
+
+		spectrumOrdered.append(spectrum[sortedIndeces[i]])
+		pairSpectrumOrdered.append(pairSpectrum[sortedIndeces[i]])
+
+	return CompleteListOfStatesOrdered, spectrumOrdered, pairSpectrumOrdered 
+
 ################################################################################
 spectroscopic_gap_plot = 0
 eigenstates_plot = 0
@@ -441,12 +551,11 @@ eigenstates_of_alpha_plot = 0
 
 if 0:
 	print("START")
-	N = 4
+	N = 15
 	n = N
 	D = 1
 	d = 2*D/N
 	alpha = 1
-	
 	
 	a = getSpectrum(D, N, n, d, alpha)
 
@@ -456,48 +565,36 @@ if 0:
 
 if 1:
 	print("START")
-	N = 4
+	N = 15
 	n = N
 	D = 1
 	d = 2*D/N
-	alpha = 0
 	
+	#alpha = 0.1
 	
-	vec, val = getEigenstates(D, N, n, d, alpha, NofEgienstates=10)
-
-	a = [vec[i][0] for i in range(min(len(vec), 10))]
-
-	print(val)
-
-	#print(vec)
-	print()
-
-	for i in range(len(val)):
-
-
-		npair = (n - countSetBits(vec[i][2]))//2
-		basisList = vec[i][1]
-		lengthOfBasis = len(basisList)
-		pairEnergies, singleEnergies = pairLevelsDispersion(d, N, D, np.array([vec[i][2]]))
-
-		pairEnergies = pairEnergies[0]
-		state = np.array(vec[i][0])
-
-		Hs = HonState(state, d, alpha, N, n, npair, basisList, lengthOfBasis, pairEnergies)
-
-		#print(val[i]*state - Hs)
-		
-	
-		degenerate=0
-		if i<len(val)-1 and i>0:
-			if np.abs(val[i]-val[i+1])<1e-5 or np.abs(val[i]-val[i-1])<1e-5:
-				degenerate=1
-		
+	for alpha in [0, 0.1, 1]:
 		print()
-		#print(state)	
-		#print(val[i]*state)
-		#print(Hs)
-		print(val[i], norm(val[i]*state - Hs), npair, degenerate)
+		print("alpha: ", alpha)
+
+		vec, val, pairE = getEigenstates(D, N, n, d, alpha, NofEgienstates=2)
+
+		print(val[:20])
+		#print(pairE)
+		#print(vec)
+		print()
+
+		for i in range(20):
+
+			npair = countSetBits(vec[i][1][0])
+			basisList = vec[i][1]
+			lengthOfBasis = len(basisList)
+			pairEnergies = vec[i][2]
+			state = np.array(vec[i][0])
+
+			Hs = HonState(state, d, alpha, N, n, npair, basisList, lengthOfBasis, pairEnergies)
+
+			print(val[i], norm(pairE[i]*state - Hs))
+		print()	
 
 	print("DONE")	
 
