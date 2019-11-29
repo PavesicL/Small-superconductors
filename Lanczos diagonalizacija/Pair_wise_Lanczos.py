@@ -44,6 +44,13 @@ from scipy.sparse.linalg import eigsh, eigs
 
 from numba import jit
 
+# LINE PROFILER ################################################################
+"""
+import line_profiler
+import atexit
+profile = line_profiler.LineProfiler()
+atexit.register(profile.print_stats)
+"""
 # PHYSICS ######################################################################
 
 @jit
@@ -382,7 +389,8 @@ def getSpectrum(D, N, n, d, alpha, verbosity=False):
 			
 			else:	
 				LinOp = HLinOP(d, alpha, N, n, npair, basisList, lengthOfBasis, pairEnergies[i]) 
-				values = eigsh(LinOp, k=min(lengthOfBasis-1, 5), which="SA", return_eigenvectors=False)[::-1]
+				#values = eigsh(LinOp, k=min(lengthOfBasis-1, 5), which="SA", return_eigenvectors=False)[::-1]
+				values = eigsh(LinOp, k=1, which="SA", return_eigenvectors=False)[::-1]
 
 				values += sum(singleEnergies[i])
 
@@ -516,7 +524,7 @@ def getEigenstates(D, N, n, d, alpha, NofEgienstates=2):
 
 			else:
 				LinOp = HLinOP(d, alpha, N, n, npair, basisList, lengthOfBasis, pairEnergies[i]) 
-				values, vectors = eigsh(LinOp, k=min(lengthOfBasis-1, 5), which="SA")
+				values, vectors = eigsh(LinOp, k=min(lengthOfBasis-1, NofEgienstates), which="SA")
 
 				pairSpectrum.extend(values)
 
@@ -549,30 +557,33 @@ eigenstates_plot = 0
 eigenstates_of_alpha_plot = 0
 ################################################################################
 
-if 0:
+if 1:
 	print("START")
-	N = 15
+			
+	N = 4
 	n = N
 	D = 1
 	d = 2*D/N
-	alpha = 1
+	alpha = 0.1
 	
 	a = getSpectrum(D, N, n, d, alpha)
 
 	print(a[:10])
+	#print(a)
 
 	print("DONE")
 
-if 1:
+if 0:
 	print("START")
-	N = 15
+	N = 4
 	n = N
 	D = 1
 	d = 2*D/N
 	
 	#alpha = 0.1
 	
-	for alpha in [0, 0.1, 1]:
+	print(N)
+	for alpha in [10]:
 		print()
 		print("alpha: ", alpha)
 
