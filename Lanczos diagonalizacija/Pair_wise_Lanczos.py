@@ -561,13 +561,13 @@ if 1:
 	print("START")
 			
 	N = 4
-	n = N
+	n = 4
 	D = 1
 	d = 2*D/N
 	alpha = 0.1
 	
 	a = getSpectrum(D, N, n, d, alpha)
-
+	print(N, n)
 	print(a[:10])
 	#print(a)
 

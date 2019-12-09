@@ -32,7 +32,7 @@ SPECTRAL TRANSITION
 
 
 """
-
+print("THIS GIVES INCORRECT RESULTS FOR THE IMPURITY")
 ################################################################################
 
 import numpy as np 
@@ -702,7 +702,7 @@ def LanczosDiag_states(M, N, D, n, d, alpha, Eimp, U, V, NofValues=4, verbosity=
 
 # TRANSITION ENERGY ############################################################
 
-print("FIX THIS!")	
+#print("FIX THIS!")	
 
 def addElectron(D, N, n, d, alpha, J, add=1):
 	"""
@@ -888,39 +888,39 @@ def findSector(basisList, N):
 	return n, nwimpUP, nwimpDOWN		
 
 # CALCULATION ##################################################################
-energies_print = 0
-states_print = 1
-
+energies_print = 1
+states_print = 0
 ################################################################################
 
 if energies_print:
 
-	M=3
+	M=4
 	N=M-1
 
 	D=1
 	
 	n=M
 
-	nUP=n/2
-	nDOWN=n-nUP
+	#nUP=n/2
+	#nDOWN=n-nUP
 
 	d = 2*D/N
 	rho=1/(2*D)
 
-	alpha = 0
-	U = 10
+	alpha = 0.1
+	U = 0
 	Eimp = -U/2 
-	Gamma = 1
+	Gamma = 0
 	V = np.sqrt(Gamma/(np.pi*rho))
 
 	val = LanczosDiag(M, N, D, n, d, alpha, Eimp, U, V, NofValues=4, verbosity=False)
 	
+	print(N, n)
 	print(val)
 	
 if states_print:
 
-	M=4
+	M=5
 	N=M-1
 
 	D=1
