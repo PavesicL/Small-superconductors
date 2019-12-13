@@ -30,9 +30,7 @@ The jit operator works nicely with everything.
 
 SPECTRAL TRANSITION
 
-
 """
-print("THIS GIVES INCORRECT RESULTS FOR THE IMPURITY")
 ################################################################################
 
 import numpy as np 
@@ -889,35 +887,116 @@ def findSector(basisList, N):
 
 # CALCULATION ##################################################################
 energies_print = 1
+states_transition_print = 0
 states_print = 0
 ################################################################################
 
+if 0:
+
+	M=5
+	N=M-1
+
+	D=1
+	d = 2*D/N
+	rho=1/(2*D)
+
+	alpha = 0
+	U = 10
+	Eimp = -U/2 
+	Gamma = 0.01
+	V = np.sqrt(Gamma/(np.pi*rho))
+
+	n = 6
+	nUP, nDOWN = 3, 3
+
+	lengthOfBasis, basisList = makeBase(M, nUP, nDOWN)
+	
+	res1 = np.searchsorted(basisList, 504)
+	res2 = np.searchsorted(basisList, 756)
+	res3 = np.searchsorted(basisList, 252)
+	res4 = np.searchsorted(basisList, 1008)
+
+	state = np.zeros(lengthOfBasis)
+	state[res1]=0.7069581364599377
+	state[res2]=-0.7069581364599377
+	state[res3]=0.010768875800029519
+	state[res4]=-0.01189230987233258
+
+	state = state/norm(state)
+
+
+	a = HonState(state, M, N, D, d, alpha, Eimp, U, V, basisList, lengthOfBasis)
+	
+	print(a)
+	print(np.dot(state, a))
+
+	"""
+	for i in range(1):
+		printV(vec[i], bas[i], prec=0.1)
+		print()
+	"""
+
 if energies_print:
 
-	M=4
+	M=9
+	N=M-1
+
+	D=1
+
+	print("M = {0}".format(M))
+	for n in [M, M+1, M-1]:
+
+		d = 2*D/N
+		rho=1/(2*D)
+
+		alpha = 0.1
+		U = 10
+		Eimp = -U/2 
+		Gamma = 0.1
+
+		V = np.sqrt(Gamma/(np.pi*rho))
+
+		val = LanczosDiag(M, N, D, n, d, alpha, Eimp, U, V, NofValues=1, verbosity=False)
+		
+		#print(val)
+		print("n = {0}  E= {1}".format(n, (val+5)[0]))
+	
+
+if states_transition_print:
+
+	M=5
 	N=M-1
 
 	D=1
 	
-	n=M
+	for n in [M, M+1, M-1]:
 
-	#nUP=n/2
-	#nDOWN=n-nUP
+		d = 2*D/N
+		rho=1/(2*D)
 
-	d = 2*D/N
-	rho=1/(2*D)
+		alpha = 0
+		U = 10
+		Eimp = -U/2 
+		Gamma = 0.01
+		V = np.sqrt(Gamma/(np.pi*rho))
 
-	alpha = 0.1
-	U = 0
-	Eimp = -U/2 
-	Gamma = 0
-	V = np.sqrt(Gamma/(np.pi*rho))
 
-	val = LanczosDiag(M, N, D, n, d, alpha, Eimp, U, V, NofValues=4, verbosity=False)
-	
-	print(N, n)
-	print(val)
-	
+		#val, vec, bas = LanczosDiagStates_nUPnDOWN(M, N, D, n, nUP, nDOWN, d, alpha, Eimp, U, V, NofValues=4, verbosity=False)
+		#vec = np.transpose(vec)
+		
+		val, vec, bas = LanczosDiag_states(M, N, D, n, d, alpha, Eimp, U, V, NofValues=4, verbosity=False)
+		
+		#val, vec = exactDiag(N, n, d, alpha, J)
+		
+		print(n, val[0]+5)
+		#print(vec)
+		
+		for i in range(1):
+			printV(vec[i], bas[i], prec=0.1)
+			print()
+
+
+
 if states_print:
 
 	M=5
@@ -936,7 +1015,7 @@ if states_print:
 	alpha = 0
 	U = 10
 	Eimp = -U/2 
-	Gamma = 1
+	Gamma = 0
 	V = np.sqrt(Gamma/(np.pi*rho))
 
 
