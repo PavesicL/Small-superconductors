@@ -886,24 +886,57 @@ def findSector(basisList, N):
 	return n, nwimpUP, nwimpDOWN		
 
 # CALCULATION ##################################################################
-energies_print = 1
+energies_print = 0
 states_transition_print = 0
 states_print = 0
 ################################################################################
 
-if 0:
+if 1:
+	#Setup to define a state and calculate the action of H on it
 
-	M=5
+	M=10
 	N=M-1
 
 	D=1
 	d = 2*D/N
 	rho=1/(2*D)
 
-	alpha = 0
+	alpha = 0.1
 	U = 10
 	Eimp = -U/2 
-	Gamma = 0.01
+	Gamma = 1
+	V = np.sqrt(Gamma/(np.pi*rho))
+
+	n = M
+
+	import time
+
+	for alpha in [0, 0.2, 0.4, 0.6, 0.8, 1.0, 1.2]:
+
+		start = time.time()
+		a = LanczosDiag(M, N, D, n, d, alpha, Eimp, U, V, NofValues=4, verbosity=False)
+		end = time.time()
+
+		print(alpha, end-start)
+	
+	#print(a)
+	
+
+
+if 0:
+	#Setup to define a state and calculate the action of H on it
+
+	M=8
+	N=M-1
+
+	D=1
+	d = 2*D/N
+	rho=1/(2*D)
+
+	alpha = 1.0
+	U = 10
+	Eimp = -U/2 
+	Gamma = 1
 	V = np.sqrt(Gamma/(np.pi*rho))
 
 	n = 6
@@ -911,17 +944,7 @@ if 0:
 
 	lengthOfBasis, basisList = makeBase(M, nUP, nDOWN)
 	
-	res1 = np.searchsorted(basisList, 504)
-	res2 = np.searchsorted(basisList, 756)
-	res3 = np.searchsorted(basisList, 252)
-	res4 = np.searchsorted(basisList, 1008)
-
-	state = np.zeros(lengthOfBasis)
-	state[res1]=0.7069581364599377
-	state[res2]=-0.7069581364599377
-	state[res3]=0.010768875800029519
-	state[res4]=-0.01189230987233258
-
+	state = np.random.random(lengthOfBasis)
 	state = state/norm(state)
 
 
