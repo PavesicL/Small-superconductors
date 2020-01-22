@@ -1,3 +1,3 @@
 # Small-superconductors
  
-Code used for (mostly) diagonalisation of the discrete superconducting Hamiltonian.
+Code used for diagonalisation of the discrete superconducting Hamiltonian.
